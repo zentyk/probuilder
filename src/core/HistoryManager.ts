@@ -1,9 +1,12 @@
 import { EditableMesh } from './EditableMesh';
+import type { Entity } from './Entity';
 
 export interface HistorySnapshot {
   description: string;
   meshes: any[];
+  entities?: any[];
   selectedMeshId: string | null;
+  selectedEntityId?: string | null;
   mode: string;
 }
 
@@ -19,14 +22,18 @@ export class HistoryManager {
     description: string,
     meshes: EditableMesh[],
     selectedMeshId: string | null,
-    mode: string
+    mode: string,
+    entities: Entity[] = [],
+    selectedEntityId: string | null = null
   ): void {
     if (this.isPerformingHistory) return;
 
     const snapshot: HistorySnapshot = {
       description,
       meshes: meshes.map((m) => m.toJSON()),
+      entities: entities.map((e) => e.toJSON()),
       selectedMeshId,
+      selectedEntityId,
       mode,
     };
 
@@ -50,7 +57,9 @@ export class HistoryManager {
   public undo(
     currentMeshes: EditableMesh[],
     currentSelectedId: string | null,
-    currentMode: string
+    currentMode: string,
+    currentEntities: Entity[] = [],
+    currentSelectedEntityId: string | null = null
   ): HistorySnapshot | null {
     if (!this.canUndo()) return null;
 
@@ -58,7 +67,9 @@ export class HistoryManager {
     const currentState: HistorySnapshot = {
       description: 'Current State',
       meshes: currentMeshes.map((m) => m.toJSON()),
+      entities: currentEntities.map((e) => e.toJSON()),
       selectedMeshId: currentSelectedId,
+      selectedEntityId: currentSelectedEntityId,
       mode: currentMode,
     };
     this.redoStack.push(currentState);

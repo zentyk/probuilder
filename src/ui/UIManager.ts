@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { Editor } from '../core/Editor';
-import type { SelectionMode, ShapeType, TransformTool } from '../core/types';
+import type { ClipMode, SelectionMode, ShapeType, TransformTool } from '../core/types';
 
 export class UIManager {
   private editor: Editor | null = null;
@@ -210,8 +210,7 @@ export class UIManager {
             <!-- Brush Tool Section (TrenchBroom / Hammer style) -->
             <div class="pb-shelf-section">
               <div class="pb-section-header">
-                <span class="pb-section-title">BRUSH TOOL</span>
-                <span class="pb-section-badge">TrenchBroom</span>
+                <span class="pb-section-title">BRUSH TOOL</span> 
               </div>
               <button id="pb-tool-drag-brush" class="pb-brush-hero-btn" title="Click & Drag to Create Brush on Grid (B)">
                 <div class="pb-brush-icon-wrapper">
@@ -293,6 +292,52 @@ export class UIManager {
                     <polygon points="3 16 12 21 21 16 12 11 3 16"></polygon>
                   </svg>
                   <span>Plane</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- Entities Section (Placeable Game Objects - Hammer / TrenchBroom style) -->
+            <div class="pb-shelf-section">
+              <div class="pb-section-header">
+                <span class="pb-section-title">ENTITIES</span>
+                <span class="pb-section-badge">Game Objects</span>
+              </div>
+              <div class="pb-entity-grid">
+                <button id="pb-btn-add-spawn" class="pb-entity-btn" title="Add Player Spawn Point (info_player_start)">
+                  <div class="pb-entity-btn-icon spawn">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <circle cx="12" cy="7" r="4"></circle>
+                      <path d="M5.5 21v-2a6.5 6.5 0 0 1 13 0v2"></path>
+                    </svg>
+                  </div>
+                  <div class="pb-entity-btn-info">
+                    <span class="pb-entity-btn-name">Player Spawn</span>
+                    <span class="pb-entity-btn-sub">info_player_start</span>
+                  </div>
+                </button>
+                <button id="pb-btn-add-point-light" class="pb-entity-btn" title="Add Point Light Entity (light)">
+                  <div class="pb-entity-btn-icon light">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="M9 18h6M10 22h4M12 2a7 7 0 0 0-7 7c0 2.5 1.5 4.5 3 6h8c1.5-1.5 3-3.5 3-6a7 7 0 0 0-7-7z"></path>
+                    </svg>
+                  </div>
+                  <div class="pb-entity-btn-info">
+                    <span class="pb-entity-btn-name">Point Light</span>
+                    <span class="pb-entity-btn-sub">Omni illumination</span>
+                  </div>
+                </button>
+                <button id="pb-btn-add-spot-light" class="pb-entity-btn" title="Add Spot Light Entity (light_spot)">
+                  <div class="pb-entity-btn-icon spot">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="m15 4-3 3 7 7 3-3z"></path>
+                      <path d="m9 10-6 6v3h3l6-6"></path>
+                      <line x1="14" y1="9" x2="19" y2="14"></line>
+                    </svg>
+                  </div>
+                  <div class="pb-entity-btn-info">
+                    <span class="pb-entity-btn-name">Spot Light</span>
+                    <span class="pb-entity-btn-sub">Cone spotlight</span>
+                  </div>
                 </button>
               </div>
             </div>
@@ -388,7 +433,16 @@ export class UIManager {
                 <span class="pb-section-title">OBJECT TOOLS</span>
               </div>
               <div class="pb-tool-list">
-                <button id="pb-tool-hollow" class="pb-action-btn pb-btn-accent-glow" title="Make Hollow Room (Ctrl+H) - TrenchBroom / Hammer style">
+                <button id="pb-tool-clip" class="pb-action-btn pb-btn-accent-glow" title="Clip / Slicing Plane Tool (Shift+X) - Hammer Knife Tool">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <line x1="3" y1="3" x2="21" y2="21"></line>
+                    <polygon points="14 3 21 3 21 10 14 3"></polygon>
+                    <polygon points="3 14 3 21 10 21 3 14"></polygon>
+                  </svg>
+                  <span class="pb-action-name">Clip Tool</span>
+                  <span class="pb-key">Shift+X</span>
+                </button>
+                <button id="pb-tool-hollow" class="pb-action-btn pb-btn-accent-glow" title="Make Hollow Room (Ctrl+H)">
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
                     <rect x="7" y="7" width="10" height="10" stroke-dasharray="2 2"></rect>
@@ -477,6 +531,7 @@ export class UIManager {
                 <span class="pb-shortcut-pill"><kbd>W</kbd><kbd>E</kbd><kbd>R</kbd> Gizmo</span>
                 <span class="pb-shortcut-pill"><kbd>G</kbd> Snap</span>
                 <span class="pb-shortcut-pill"><kbd>Shift+E</kbd> Extrude</span>
+                <span class="pb-shortcut-pill"><kbd>Shift+X</kbd> Clip</span>
                 <span class="pb-shortcut-pill"><kbd>P</kbd> Playtest</span>
               </div>
               <div class="pb-footer-right">
@@ -530,8 +585,127 @@ export class UIManager {
               </div>
             </div>
 
+            <!-- Entity Inspector Section (Shown when an entity is selected) -->
+            <div id="pb-entity-inspector" class="pb-shelf-section pb-entity-inspector" style="display: none;">
+              <div class="pb-section-header">
+                <span class="pb-section-title">ENTITY PROPERTIES</span>
+                <span id="pb-entity-type-badge" class="pb-section-badge">light</span>
+              </div>
+
+              <!-- Entity Name Field -->
+              <div class="pb-entity-row">
+                <label for="pb-entity-name-input">Name</label>
+                <input type="text" id="pb-entity-name-input" class="pb-text-input pb-text-input-sm" />
+              </div>
+
+              <!-- Player Spawn Controls -->
+              <div id="pb-entity-props-spawn" class="pb-entity-subprops" style="display: none;">
+                <div class="pb-entity-row">
+                  <div class="pb-field-header">
+                    <label>Spawn Yaw</label>
+                    <span id="pb-spawn-yaw-display" class="pb-field-val">0°</span>
+                  </div>
+                  <div class="pb-entity-yaw-row">
+                    <input type="range" id="pb-spawn-yaw-slider" min="0" max="360" step="15" value="0" class="pb-tex-slider" />
+                    <input type="number" id="pb-spawn-yaw-num" min="0" max="360" step="1" value="0" class="pb-text-input pb-text-input-sm pb-entity-yaw-num" />
+                  </div>
+                </div>
+                <div class="pb-preset-chips pb-compass-chips">
+                  <button type="button" class="pb-chip active" data-yaw="0" title="North (-Z)">0° N</button>
+                  <button type="button" class="pb-chip" data-yaw="90" title="East (+X)">90° E</button>
+                  <button type="button" class="pb-chip" data-yaw="180" title="South (+Z)">180° S</button>
+                  <button type="button" class="pb-chip" data-yaw="270" title="West (-X)">270° W</button>
+                </div>
+                <div class="pb-entity-action-box">
+                  <button id="pb-btn-test-from-spawn" class="pb-btn pb-btn-sm pb-btn-accent" style="width: 100%;">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                      <polygon points="5 3 19 12 5 21 5 3"></polygon>
+                    </svg>
+                    <span>Test Play from Here</span>
+                  </button>
+                </div>
+              </div>
+
+              <!-- Light (Point & Spot) Controls -->
+              <div id="pb-entity-props-light" class="pb-entity-subprops" style="display: none;">
+                <!-- Light Color -->
+                <div class="pb-entity-row">
+                  <label for="pb-light-color-input">Color</label>
+                  <div class="pb-light-color-picker-wrapper">
+                    <input type="color" id="pb-light-color-input" value="#ffb366" class="pb-color-swatch-input" />
+                    <span id="pb-light-color-hex" class="pb-hex-text">#FFB366</span>
+                  </div>
+                </div>
+
+                <!-- Light Presets -->
+                <div class="pb-light-presets-row">
+                  <button type="button" class="pb-light-chip" data-color="#ffb366" title="Warm Incandescent" style="background: #ffb366;"></button>
+                  <button type="button" class="pb-light-chip" data-color="#ffffff" title="Pure White" style="background: #ffffff;"></button>
+                  <button type="button" class="pb-light-chip" data-color="#e0f0ff" title="Cool Daylight" style="background: #e0f0ff;"></button>
+                  <button type="button" class="pb-light-chip" data-color="#ff7700" title="Voskel Amber" style="background: #ff7700;"></button>
+                  <button type="button" class="pb-light-chip" data-color="#00e5ff" title="Sci-Fi Cyan" style="background: #00e5ff;"></button>
+                  <button type="button" class="pb-light-chip" data-color="#ff2a2a" title="Red Alert" style="background: #ff2a2a;"></button>
+                  <button type="button" class="pb-light-chip" data-color="#10b981" title="Terminal Emerald" style="background: #10b981;"></button>
+                  <button type="button" class="pb-light-chip" data-color="#a855f7" title="Plasma Violet" style="background: #a855f7;"></button>
+                </div>
+
+                <!-- Intensity Slider -->
+                <div class="pb-entity-row">
+                  <div class="pb-field-header">
+                    <label>Intensity</label>
+                    <span id="pb-light-intensity-val" class="pb-field-val">3.5</span>
+                  </div>
+                  <input type="range" id="pb-light-intensity-slider" min="0.1" max="15" step="0.2" value="3.5" class="pb-tex-slider" />
+                </div>
+
+                <!-- Distance / Radius Slider -->
+                <div class="pb-entity-row">
+                  <div class="pb-field-header">
+                    <label>Distance (Range)</label>
+                    <span id="pb-light-distance-val" class="pb-field-val">12.0m</span>
+                  </div>
+                  <input type="range" id="pb-light-distance-slider" min="1" max="40" step="0.5" value="12" class="pb-tex-slider" />
+                </div>
+
+                <!-- Decay (Falloff) -->
+                <div class="pb-entity-row">
+                  <div class="pb-field-header">
+                    <label>Decay (Falloff)</label>
+                    <span id="pb-light-decay-val" class="pb-field-val">2.0</span>
+                  </div>
+                  <input type="range" id="pb-light-decay-slider" min="0" max="3" step="0.1" value="2.0" class="pb-tex-slider" />
+                </div>
+
+                <!-- Spot-only: Cone Beam Angle -->
+                <div id="pb-spot-angle-row" class="pb-entity-row" style="display: none;">
+                  <div class="pb-field-header">
+                    <label>Cone Angle</label>
+                    <span id="pb-spot-angle-val" class="pb-field-val">45°</span>
+                  </div>
+                  <input type="range" id="pb-spot-angle-slider" min="10" max="85" step="1" value="45" class="pb-tex-slider" />
+                </div>
+
+                <!-- Spot-only: Penumbra (Softness) -->
+                <div id="pb-spot-penumbra-row" class="pb-entity-row" style="display: none;">
+                  <div class="pb-field-header">
+                    <label>Penumbra</label>
+                    <span id="pb-spot-penumbra-val" class="pb-field-val">0.35</span>
+                  </div>
+                  <input type="range" id="pb-spot-penumbra-slider" min="0" max="1" step="0.05" value="0.35" class="pb-tex-slider" />
+                </div>
+
+                <!-- Cast Shadow Toggle -->
+                <div class="pb-entity-row pb-entity-checkbox-row">
+                  <label for="pb-light-shadow-toggle" class="pb-checkbox-label">
+                    <input type="checkbox" id="pb-light-shadow-toggle" checked />
+                    <span>Cast Dynamic Shadows</span>
+                  </label>
+                </div>
+              </div>
+            </div>
+
             <!-- Topology Stats Section -->
-            <div class="pb-shelf-section">
+            <div id="pb-topology-stats-section" class="pb-shelf-section">
               <div class="pb-section-header">
                 <span class="pb-section-title">TOPOLOGY STATS</span>
               </div>
@@ -808,6 +982,52 @@ export class UIManager {
           <div class="pb-hud-sub" id="pb-hud-sub">Scroll ↕ Height &bull; Shift: Square</div>
         </div>
 
+        <!-- Floating Clip Tool HUD (Hammer Knife Tool / Shift+X) -->
+        <div id="pb-clip-hud" class="pb-clip-hud" style="display: none;">
+          <div class="pb-clip-hud-header">
+            <div class="pb-clip-hud-title-group">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#f97316" stroke-width="2">
+                <line x1="3" y1="3" x2="21" y2="21"></line>
+                <polygon points="14 3 21 3 21 10 14 3"></polygon>
+                <polygon points="3 14 3 21 10 21 3 14"></polygon>
+              </svg>
+              <span class="pb-clip-hud-title">Clip Tool (Knife)</span>
+              <span class="pb-key">Shift+X</span>
+            </div>
+            <button id="pb-clip-close-btn" class="pb-modal-close-btn" title="Exit Clip Tool (Esc)">✕</button>
+          </div>
+
+          <div class="pb-clip-hud-body">
+            <!-- Guidance status -->
+            <div id="pb-clip-guidance" class="pb-clip-guidance">
+              Click Point 1 on mesh or grid...
+            </div>
+
+            <!-- Mode Selector Chips (Shift+X to cycle) -->
+            <div class="pb-clip-mode-row">
+              <span class="pb-clip-row-label">Action:</span>
+              <div class="pb-preset-chips pb-clip-mode-chips">
+                <button type="button" class="pb-chip" data-clip-mode="keep_front" title="Keep Front Half (Side A)">Keep Front</button>
+                <button type="button" class="pb-chip" data-clip-mode="keep_back" title="Keep Back Half (Side B)">Keep Back</button>
+                <button type="button" class="pb-chip active" data-clip-mode="split_both" title="Split into 2 Watertight Meshes">Split Both</button>
+              </div>
+            </div>
+
+            <!-- Actions Bar -->
+            <div class="pb-clip-actions-row">
+              <button id="pb-clip-btn-cut" class="pb-btn pb-btn-sm pb-btn-accent" title="Execute Slice (Enter)">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <polyline points="20 6 9 17 4 12"></polyline>
+                </svg>
+                <span>Slice Mesh (Enter)</span>
+              </button>
+              <button id="pb-clip-btn-reset" class="pb-btn pb-btn-sm pb-btn-secondary" title="Clear Points and restart">
+                Reset Points
+              </button>
+            </div>
+          </div>
+        </div>
+
         <!-- Toast Notifications Container -->
         <div id="pb-toast-container" class="pb-toast-container"></div>
       </div>
@@ -957,24 +1177,40 @@ export class UIManager {
       });
     });
 
-    // Transform Inspector Inputs
+    // Entity Creation Buttons (Hammer / TrenchBroom style)
+    this.container.querySelector('#pb-btn-add-spawn')?.addEventListener('click', () => {
+      this.editor?.createEntity('player_spawn');
+    });
+    this.container.querySelector('#pb-btn-add-point-light')?.addEventListener('click', () => {
+      this.editor?.createEntity('light_point');
+    });
+    this.container.querySelector('#pb-btn-add-spot-light')?.addEventListener('click', () => {
+      this.editor?.createEntity('light_spot');
+    });
+
+    // Transform Inspector Inputs (Supports both Meshes and Entities)
     const setupTransformInput = (id: string, axis: 'x' | 'y' | 'z', type: 'pos' | 'rot' | 'scale') => {
       const input = this.container.querySelector(id) as HTMLInputElement;
       input.addEventListener('change', () => {
         if (!this.editor) return;
         const mesh = this.editor.selectionManager.selectedMesh;
-        if (!mesh) return;
+        const entity = this.editor.selectionManager.selectedEntity;
+        if (!mesh && !entity) return;
         const val = parseFloat(input.value);
         if (isNaN(val)) return;
 
+        const targetGroup = entity ? entity.group : mesh!.group;
+
         if (type === 'pos') {
-          mesh.group.position[axis] = val;
+          targetGroup.position[axis] = val;
         } else if (type === 'rot') {
-          mesh.group.rotation[axis] = (val * Math.PI) / 180;
+          targetGroup.rotation[axis] = (val * Math.PI) / 180;
         } else if (type === 'scale') {
-          mesh.group.scale[axis] = Math.max(0.001, val);
+          if (!entity) {
+            targetGroup.scale[axis] = Math.max(0.001, val);
+          }
         }
-        mesh.group.updateMatrixWorld(true);
+        targetGroup.updateMatrixWorld(true);
         this.editor.gizmoManager.updateGizmoAttachment();
         this.editor.recordHistory('Transform Input');
       });
@@ -991,6 +1227,200 @@ export class UIManager {
     setupTransformInput('#pb-scale-x', 'x', 'scale');
     setupTransformInput('#pb-scale-y', 'y', 'scale');
     setupTransformInput('#pb-scale-z', 'z', 'scale');
+
+    // Entity Inspector Controls
+    const entityNameInput = this.container.querySelector('#pb-entity-name-input') as HTMLInputElement;
+    entityNameInput?.addEventListener('change', () => {
+      const ent = this.editor?.selectionManager.selectedEntity;
+      if (ent && entityNameInput.value.trim()) {
+        ent.name = entityNameInput.value.trim();
+        ent.group.name = ent.name;
+        this.editor?.recordHistory(`Rename ${ent.name}`);
+        this.updateHierarchy();
+      }
+    });
+
+    // Player Spawn Yaw Slider & Num Input
+    const spawnYawSlider = this.container.querySelector('#pb-spawn-yaw-slider') as HTMLInputElement;
+    const spawnYawNum = this.container.querySelector('#pb-spawn-yaw-num') as HTMLInputElement;
+    const spawnYawDisplay = this.container.querySelector('#pb-spawn-yaw-display') as HTMLElement;
+    const updateSpawnYaw = (val: number, record = true) => {
+      const ent = this.editor?.selectionManager.selectedEntity;
+      if (ent && ent.type === 'player_spawn') {
+        ent.updateProperties({ yaw: val });
+        if (spawnYawSlider) spawnYawSlider.value = val.toString();
+        if (spawnYawNum) spawnYawNum.value = val.toString();
+        if (spawnYawDisplay) spawnYawDisplay.textContent = `${val}°`;
+        this.container.querySelectorAll('.pb-compass-chips .pb-chip').forEach((chip) => {
+          const chipYaw = parseInt(chip.getAttribute('data-yaw') || '-1', 10);
+          chip.classList.toggle('active', chipYaw === val);
+        });
+        if (record) {
+          this.editor?.recordHistory('Spawn Yaw');
+        }
+      }
+    };
+    spawnYawSlider?.addEventListener('input', () => {
+      updateSpawnYaw(parseInt(spawnYawSlider.value, 10), false);
+    });
+    spawnYawSlider?.addEventListener('change', () => {
+      updateSpawnYaw(parseInt(spawnYawSlider.value, 10), true);
+    });
+    spawnYawNum?.addEventListener('change', () => {
+      const val = Math.max(0, Math.min(360, parseInt(spawnYawNum.value, 10) || 0));
+      updateSpawnYaw(val, true);
+    });
+    this.container.querySelectorAll('.pb-compass-chips .pb-chip').forEach((chip) => {
+      chip.addEventListener('click', () => {
+        const yaw = parseInt(chip.getAttribute('data-yaw') || '0', 10);
+        updateSpawnYaw(yaw, true);
+      });
+    });
+
+    // "Test Play from Here" button
+    this.container.querySelector('#pb-btn-test-from-spawn')?.addEventListener('click', () => {
+      const ent = this.editor?.selectionManager.selectedEntity;
+      if (ent && ent.type === 'player_spawn') {
+        this.editor?.enterPlaytest(ent);
+      }
+    });
+
+    // Light Color Picker & Presets
+    const lightColorInput = this.container.querySelector('#pb-light-color-input') as HTMLInputElement;
+    const lightColorHex = this.container.querySelector('#pb-light-color-hex') as HTMLElement;
+    const updateLightColor = (hex: string, record = true) => {
+      const ent = this.editor?.selectionManager.selectedEntity;
+      if (ent && (ent.type === 'light_point' || ent.type === 'light_spot')) {
+        ent.updateProperties({ color: hex });
+        if (lightColorInput) lightColorInput.value = hex;
+        if (lightColorHex) lightColorHex.textContent = hex.toUpperCase();
+        if (record) {
+          this.editor?.recordHistory('Light Color');
+        }
+      }
+    };
+    lightColorInput?.addEventListener('input', () => {
+      updateLightColor(lightColorInput.value, false);
+    });
+    lightColorInput?.addEventListener('change', () => {
+      updateLightColor(lightColorInput.value, true);
+    });
+    this.container.querySelectorAll('.pb-light-presets-row .pb-light-chip').forEach((chip) => {
+      chip.addEventListener('click', () => {
+        const hex = chip.getAttribute('data-color') || '#ffffff';
+        updateLightColor(hex, true);
+      });
+    });
+
+    // Light Intensity Slider
+    const lightIntensitySlider = this.container.querySelector('#pb-light-intensity-slider') as HTMLInputElement;
+    const lightIntensityVal = this.container.querySelector('#pb-light-intensity-val') as HTMLElement;
+    const updateLightIntensity = (val: number, record = true) => {
+      const ent = this.editor?.selectionManager.selectedEntity;
+      if (ent && (ent.type === 'light_point' || ent.type === 'light_spot')) {
+        ent.updateProperties({ intensity: val });
+        if (lightIntensityVal) lightIntensityVal.textContent = val.toFixed(1);
+        if (record) {
+          this.editor?.recordHistory('Light Intensity');
+        }
+      }
+    };
+    lightIntensitySlider?.addEventListener('input', () => {
+      updateLightIntensity(parseFloat(lightIntensitySlider.value), false);
+    });
+    lightIntensitySlider?.addEventListener('change', () => {
+      updateLightIntensity(parseFloat(lightIntensitySlider.value), true);
+    });
+
+    // Light Distance Slider
+    const lightDistanceSlider = this.container.querySelector('#pb-light-distance-slider') as HTMLInputElement;
+    const lightDistanceVal = this.container.querySelector('#pb-light-distance-val') as HTMLElement;
+    const updateLightDistance = (val: number, record = true) => {
+      const ent = this.editor?.selectionManager.selectedEntity;
+      if (ent && (ent.type === 'light_point' || ent.type === 'light_spot')) {
+        ent.updateProperties({ distance: val });
+        if (lightDistanceVal) lightDistanceVal.textContent = `${val.toFixed(1)}m`;
+        if (record) {
+          this.editor?.recordHistory('Light Distance');
+        }
+      }
+    };
+    lightDistanceSlider?.addEventListener('input', () => {
+      updateLightDistance(parseFloat(lightDistanceSlider.value), false);
+    });
+    lightDistanceSlider?.addEventListener('change', () => {
+      updateLightDistance(parseFloat(lightDistanceSlider.value), true);
+    });
+
+    // Light Decay Slider
+    const lightDecaySlider = this.container.querySelector('#pb-light-decay-slider') as HTMLInputElement;
+    const lightDecayVal = this.container.querySelector('#pb-light-decay-val') as HTMLElement;
+    const updateLightDecay = (val: number, record = true) => {
+      const ent = this.editor?.selectionManager.selectedEntity;
+      if (ent && (ent.type === 'light_point' || ent.type === 'light_spot')) {
+        ent.updateProperties({ decay: val });
+        if (lightDecayVal) lightDecayVal.textContent = val.toFixed(1);
+        if (record) {
+          this.editor?.recordHistory('Light Decay');
+        }
+      }
+    };
+    lightDecaySlider?.addEventListener('input', () => {
+      updateLightDecay(parseFloat(lightDecaySlider.value), false);
+    });
+    lightDecaySlider?.addEventListener('change', () => {
+      updateLightDecay(parseFloat(lightDecaySlider.value), true);
+    });
+
+    // Spot Angle Slider
+    const spotAngleSlider = this.container.querySelector('#pb-spot-angle-slider') as HTMLInputElement;
+    const spotAngleVal = this.container.querySelector('#pb-spot-angle-val') as HTMLElement;
+    const updateSpotAngle = (val: number, record = true) => {
+      const ent = this.editor?.selectionManager.selectedEntity;
+      if (ent && ent.type === 'light_spot') {
+        ent.updateProperties({ angle: val });
+        if (spotAngleVal) spotAngleVal.textContent = `${val}°`;
+        if (record) {
+          this.editor?.recordHistory('Spot Angle');
+        }
+      }
+    };
+    spotAngleSlider?.addEventListener('input', () => {
+      updateSpotAngle(parseInt(spotAngleSlider.value, 10), false);
+    });
+    spotAngleSlider?.addEventListener('change', () => {
+      updateSpotAngle(parseInt(spotAngleSlider.value, 10), true);
+    });
+
+    // Spot Penumbra Slider
+    const spotPenumbraSlider = this.container.querySelector('#pb-spot-penumbra-slider') as HTMLInputElement;
+    const spotPenumbraVal = this.container.querySelector('#pb-spot-penumbra-val') as HTMLElement;
+    const updateSpotPenumbra = (val: number, record = true) => {
+      const ent = this.editor?.selectionManager.selectedEntity;
+      if (ent && ent.type === 'light_spot') {
+        ent.updateProperties({ penumbra: val });
+        if (spotPenumbraVal) spotPenumbraVal.textContent = val.toFixed(2);
+        if (record) {
+          this.editor?.recordHistory('Spot Penumbra');
+        }
+      }
+    };
+    spotPenumbraSlider?.addEventListener('input', () => {
+      updateSpotPenumbra(parseFloat(spotPenumbraSlider.value), false);
+    });
+    spotPenumbraSlider?.addEventListener('change', () => {
+      updateSpotPenumbra(parseFloat(spotPenumbraSlider.value), true);
+    });
+
+    // Light Cast Shadow Toggle
+    const lightShadowToggle = this.container.querySelector('#pb-light-shadow-toggle') as HTMLInputElement;
+    lightShadowToggle?.addEventListener('change', () => {
+      const ent = this.editor?.selectionManager.selectedEntity;
+      if (ent && (ent.type === 'light_point' || ent.type === 'light_spot')) {
+        ent.updateProperties({ castShadow: lightShadowToggle.checked });
+        this.editor?.recordHistory('Light Cast Shadow');
+      }
+    });
   }
 
   private setupEditorHooks(): void {
@@ -1098,6 +1528,83 @@ export class UIManager {
         chip.classList.toggle('active', val === state.rotation);
       });
     };
+
+    // Setup Clip Tool Events & HUD
+    this.setupClipToolEvents();
+  }
+
+  private setupClipToolEvents(): void {
+    if (!this.editor) return;
+
+    // Toggle button in left toolbar
+    this.container.querySelector('#pb-tool-clip')?.addEventListener('click', () => {
+      this.editor?.toggleClipTool();
+    });
+
+    // Close button
+    this.container.querySelector('#pb-clip-close-btn')?.addEventListener('click', () => {
+      this.editor?.clipTool.deactivate();
+      this.updateUI();
+    });
+
+    // Slice execute button
+    this.container.querySelector('#pb-clip-btn-cut')?.addEventListener('click', () => {
+      this.editor?.clipTool.executeCut();
+      this.updateUI();
+    });
+
+    // Reset points button
+    this.container.querySelector('#pb-clip-btn-reset')?.addEventListener('click', () => {
+      this.editor?.clipTool.resetPoints();
+      this.updateUI();
+    });
+
+    // Mode selector chips
+    const modeChips = this.container.querySelectorAll('.pb-clip-mode-chips .pb-chip');
+    modeChips.forEach((chip) => {
+      chip.addEventListener('click', () => {
+        const mode = chip.getAttribute('data-clip-mode') as ClipMode;
+        if (mode && this.editor) {
+          this.editor.clipTool.setMode(mode);
+          modeChips.forEach((c) => c.classList.toggle('active', c === chip));
+        }
+      });
+    });
+
+    // ClipTool State Callback
+    this.editor.clipTool.onStateChanged = (state) => {
+      const hud = this.container.querySelector('#pb-clip-hud') as HTMLElement;
+      if (!hud) return;
+
+      hud.style.display = state.isActive ? 'flex' : 'none';
+
+      const guidance = this.container.querySelector('#pb-clip-guidance')!;
+      if (state.pointCount === 0) {
+        guidance.textContent = state.targetMeshName
+          ? `Click Point 1 on ${state.targetMeshName} or grid...`
+          : 'Click Point 1 on mesh or grid...';
+      } else if (state.pointCount === 1) {
+        guidance.textContent = 'Click Point 2 to cast vertical cutting plane...';
+      } else if (state.pointCount === 2) {
+        guidance.textContent = 'Vertical plane ready! Press Enter to Cut (or click Point 3 for angled plane)';
+      } else if (state.pointCount >= 3) {
+        guidance.textContent = '3-Point angled plane ready! Press Enter to Cut';
+      }
+
+      modeChips.forEach((chip) => {
+        chip.classList.toggle('active', chip.getAttribute('data-clip-mode') === state.mode);
+      });
+
+      const cutBtn = this.container.querySelector('#pb-clip-btn-cut') as HTMLButtonElement;
+      if (cutBtn) {
+        cutBtn.disabled = !state.hasPlane;
+      }
+
+      const clipBtn = this.container.querySelector('#pb-tool-clip');
+      if (clipBtn) {
+        clipBtn.classList.toggle('active', state.isActive);
+      }
+    };
   }
 
   public updateUI(): void {
@@ -1143,9 +1650,116 @@ export class UIManager {
     // Hierarchy list
     this.updateHierarchy();
 
-    // Transform Inspector
+    // Transform Inspector & Entity Inspector
     const meshNameLabel = this.container.querySelector('#pb-selected-mesh-name')!;
-    if (mesh) {
+    const entity = this.editor.selectionManager.selectedEntity;
+    const entityInspector = this.container.querySelector('#pb-entity-inspector') as HTMLElement;
+    const topoStatsSection = this.container.querySelector('#pb-topology-stats-section') as HTMLElement;
+
+    if (entity) {
+      if (entityInspector) entityInspector.style.display = 'block';
+      if (topoStatsSection) topoStatsSection.style.display = 'none';
+
+      meshNameLabel.textContent = entity.name;
+      const entityNameInput = this.container.querySelector('#pb-entity-name-input') as HTMLInputElement;
+      if (entityNameInput && document.activeElement !== entityNameInput) {
+        entityNameInput.value = entity.name;
+      }
+
+      const typeBadge = this.container.querySelector('#pb-entity-type-badge')!;
+      typeBadge.textContent = entity.type.replace('_', ' ').toUpperCase();
+
+      (this.container.querySelector('#pb-pos-x') as HTMLInputElement).value = entity.group.position.x.toFixed(2);
+      (this.container.querySelector('#pb-pos-y') as HTMLInputElement).value = entity.group.position.y.toFixed(2);
+      (this.container.querySelector('#pb-pos-z') as HTMLInputElement).value = entity.group.position.z.toFixed(2);
+
+      (this.container.querySelector('#pb-rot-x') as HTMLInputElement).value = ((entity.group.rotation.x * 180) / Math.PI).toFixed(0);
+      (this.container.querySelector('#pb-rot-y') as HTMLInputElement).value = ((entity.group.rotation.y * 180) / Math.PI).toFixed(0);
+      (this.container.querySelector('#pb-rot-z') as HTMLInputElement).value = ((entity.group.rotation.z * 180) / Math.PI).toFixed(0);
+
+      (this.container.querySelector('#pb-scale-x') as HTMLInputElement).value = '1.00';
+      (this.container.querySelector('#pb-scale-y') as HTMLInputElement).value = '1.00';
+      (this.container.querySelector('#pb-scale-z') as HTMLInputElement).value = '1.00';
+
+      const propsSpawn = this.container.querySelector('#pb-entity-props-spawn') as HTMLElement;
+      const propsLight = this.container.querySelector('#pb-entity-props-light') as HTMLElement;
+
+      if (entity.type === 'player_spawn') {
+        if (propsSpawn) propsSpawn.style.display = 'block';
+        if (propsLight) propsLight.style.display = 'none';
+
+        const yaw = entity.properties.yaw ?? 0;
+        const spawnYawSlider = this.container.querySelector('#pb-spawn-yaw-slider') as HTMLInputElement;
+        const spawnYawNum = this.container.querySelector('#pb-spawn-yaw-num') as HTMLInputElement;
+        const spawnYawDisplay = this.container.querySelector('#pb-spawn-yaw-display') as HTMLElement;
+
+        if (spawnYawSlider && document.activeElement !== spawnYawSlider) spawnYawSlider.value = yaw.toString();
+        if (spawnYawNum && document.activeElement !== spawnYawNum) spawnYawNum.value = yaw.toString();
+        if (spawnYawDisplay) spawnYawDisplay.textContent = `${yaw}°`;
+
+        this.container.querySelectorAll('.pb-compass-chips .pb-chip').forEach((chip) => {
+          const chipYaw = parseInt(chip.getAttribute('data-yaw') || '-1', 10);
+          chip.classList.toggle('active', chipYaw === yaw);
+        });
+      } else {
+        if (propsSpawn) propsSpawn.style.display = 'none';
+        if (propsLight) propsLight.style.display = 'block';
+
+        const color = entity.properties.color || '#ffffff';
+        const intensity = entity.properties.intensity ?? 3.5;
+        const distance = entity.properties.distance ?? 12.0;
+        const decay = entity.properties.decay ?? 2.0;
+        const castShadow = entity.properties.castShadow !== false;
+
+        const lightColorInput = this.container.querySelector('#pb-light-color-input') as HTMLInputElement;
+        const lightColorHex = this.container.querySelector('#pb-light-color-hex') as HTMLElement;
+        if (lightColorInput && document.activeElement !== lightColorInput) lightColorInput.value = color;
+        if (lightColorHex) lightColorHex.textContent = color.toUpperCase();
+
+        const lightIntensitySlider = this.container.querySelector('#pb-light-intensity-slider') as HTMLInputElement;
+        const lightIntensityVal = this.container.querySelector('#pb-light-intensity-val') as HTMLElement;
+        if (lightIntensitySlider && document.activeElement !== lightIntensitySlider) lightIntensitySlider.value = intensity.toString();
+        if (lightIntensityVal) lightIntensityVal.textContent = intensity.toFixed(1);
+
+        const lightDistanceSlider = this.container.querySelector('#pb-light-distance-slider') as HTMLInputElement;
+        const lightDistanceVal = this.container.querySelector('#pb-light-distance-val') as HTMLElement;
+        if (lightDistanceSlider && document.activeElement !== lightDistanceSlider) lightDistanceSlider.value = distance.toString();
+        if (lightDistanceVal) lightDistanceVal.textContent = `${distance.toFixed(1)}m`;
+
+        const lightDecaySlider = this.container.querySelector('#pb-light-decay-slider') as HTMLInputElement;
+        const lightDecayVal = this.container.querySelector('#pb-light-decay-val') as HTMLElement;
+        if (lightDecaySlider && document.activeElement !== lightDecaySlider) lightDecaySlider.value = decay.toString();
+        if (lightDecayVal) lightDecayVal.textContent = decay.toFixed(1);
+
+        const lightShadowToggle = this.container.querySelector('#pb-light-shadow-toggle') as HTMLInputElement;
+        if (lightShadowToggle) lightShadowToggle.checked = castShadow;
+
+        const isSpot = entity.type === 'light_spot';
+        const spotAngleRow = this.container.querySelector('#pb-spot-angle-row') as HTMLElement;
+        const spotPenumbraRow = this.container.querySelector('#pb-spot-penumbra-row') as HTMLElement;
+
+        if (spotAngleRow) spotAngleRow.style.display = isSpot ? 'block' : 'none';
+        if (spotPenumbraRow) spotPenumbraRow.style.display = isSpot ? 'block' : 'none';
+
+        if (isSpot) {
+          const angle = entity.properties.angle ?? 45;
+          const penumbra = entity.properties.penumbra ?? 0.35;
+
+          const spotAngleSlider = this.container.querySelector('#pb-spot-angle-slider') as HTMLInputElement;
+          const spotAngleVal = this.container.querySelector('#pb-spot-angle-val') as HTMLElement;
+          if (spotAngleSlider && document.activeElement !== spotAngleSlider) spotAngleSlider.value = angle.toString();
+          if (spotAngleVal) spotAngleVal.textContent = `${angle}°`;
+
+          const spotPenumbraSlider = this.container.querySelector('#pb-spot-penumbra-slider') as HTMLInputElement;
+          const spotPenumbraVal = this.container.querySelector('#pb-spot-penumbra-val') as HTMLElement;
+          if (spotPenumbraSlider && document.activeElement !== spotPenumbraSlider) spotPenumbraSlider.value = penumbra.toString();
+          if (spotPenumbraVal) spotPenumbraVal.textContent = penumbra.toFixed(2);
+        }
+      }
+    } else if (mesh) {
+      if (entityInspector) entityInspector.style.display = 'none';
+      if (topoStatsSection) topoStatsSection.style.display = 'block';
+
       meshNameLabel.textContent = mesh.name;
       (this.container.querySelector('#pb-pos-x') as HTMLInputElement).value = mesh.group.position.x.toFixed(2);
       (this.container.querySelector('#pb-pos-y') as HTMLInputElement).value = mesh.group.position.y.toFixed(2);
@@ -1159,6 +1773,8 @@ export class UIManager {
       (this.container.querySelector('#pb-scale-y') as HTMLInputElement).value = mesh.group.scale.y.toFixed(2);
       (this.container.querySelector('#pb-scale-z') as HTMLInputElement).value = mesh.group.scale.z.toFixed(2);
     } else {
+      if (entityInspector) entityInspector.style.display = 'none';
+      if (topoStatsSection) topoStatsSection.style.display = 'block';
       meshNameLabel.textContent = 'None';
     }
 
@@ -1191,14 +1807,19 @@ export class UIManager {
 
     // Status bar text
     const statusInfo = this.container.querySelector('#pb-status-info')!;
+    const isClip = !!this.editor.clipTool?.isActive;
     if (isPlaytest) {
-      statusInfo.textContent = 'Playtesting level (FPS controller active)';
+      statusInfo.textContent = 'Playtesting level (FPS controller active — ESC to exit)';
+    } else if (isClip) {
+      statusInfo.textContent = 'Clip Tool (Shift+X): Click 2 points for vertical plane or 3 for angled plane • Shift+X: Cycle mode • Enter: Slice • Esc: Exit';
     } else if (mode === 'brush') {
       statusInfo.textContent = 'Brush Tool: Click & drag on floor grid (Shift: Square, Scroll: Height, Esc: Exit)';
+    } else if (entity) {
+      statusInfo.textContent = `${entity.name} (${entity.type}) — Move with W/E/R or edit properties`;
     } else if (mesh) {
       statusInfo.textContent = `${mesh.name} (${mode.toUpperCase()} Mode) — ${selectedCount} ${selectedLabel}`;
     } else {
-      statusInfo.textContent = 'Ready — Click on any mesh to select';
+      statusInfo.textContent = 'Ready — Click on any mesh or entity to select';
     }
 
     // Brush Hero Button & Height Input Sync
@@ -1215,6 +1836,12 @@ export class UIManager {
     const texBtn = this.container.querySelector('#pb-tool-texture-inspector');
     if (texBtn) texBtn.classList.toggle('active', isTexActive);
 
+    // Clip Tool Button & HUD Sync
+    const clipBtn = this.container.querySelector('#pb-tool-clip');
+    if (clipBtn) clipBtn.classList.toggle('active', isClip);
+    const clipHud = this.container.querySelector('#pb-clip-hud') as HTMLElement;
+    if (clipHud) clipHud.style.display = isClip ? 'flex' : 'none';
+
     // Grid snap footer
     const coordsInfo = this.container.querySelector('#pb-coords-info')!;
     coordsInfo.textContent = `Snap: ${snapping.enabled ? snapping.translate + 'm' : 'OFF'}`;
@@ -1224,27 +1851,80 @@ export class UIManager {
     if (!this.editor) return;
     const list = this.container.querySelector('#pb-hierarchy-list')!;
     const countBadge = this.container.querySelector('#pb-mesh-count')!;
-    countBadge.textContent = `${this.editor.meshes.length} Meshes`;
+    const meshCount = this.editor.meshes.length;
+    const entityCount = this.editor.entities.length;
+    countBadge.textContent = `${meshCount}m • ${entityCount}e`;
 
     list.innerHTML = '';
-    for (const mesh of this.editor.meshes) {
-      const isSelected = this.editor.selectionManager.selectedMesh === mesh;
-      const item = document.createElement('div');
-      item.className = `pb-hierarchy-item ${isSelected ? 'selected' : ''}`;
-      item.innerHTML = `
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
-        </svg>
-        <span class="pb-item-name">${mesh.name}</span>
-        <span class="pb-item-faces">${mesh.faces.length}f</span>
-      `;
-      item.addEventListener('click', () => {
-        if (!this.editor) return;
-        this.editor.selectionManager.selectMesh(mesh);
-        this.editor.gizmoManager.updateGizmoAttachment();
-        this.updateUI();
-      });
-      list.appendChild(item);
+
+    // 1. Render Meshes
+    if (this.editor.meshes.length > 0) {
+      const header = document.createElement('div');
+      header.className = 'pb-hierarchy-group-header';
+      header.textContent = 'MESHES / BRUSHES';
+      list.appendChild(header);
+
+      for (const mesh of this.editor.meshes) {
+        const isSelected = this.editor.selectionManager.selectedMesh === mesh;
+        const item = document.createElement('div');
+        item.className = `pb-hierarchy-item ${isSelected ? 'selected' : ''}`;
+        item.innerHTML = `
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
+          </svg>
+          <span class="pb-item-name">${mesh.name}</span>
+          <span class="pb-item-faces">${mesh.faces.length}f</span>
+        `;
+        item.addEventListener('click', () => {
+          if (!this.editor) return;
+          this.editor.selectionManager.selectMesh(mesh);
+          this.editor.gizmoManager.updateGizmoAttachment();
+          this.updateUI();
+        });
+        list.appendChild(item);
+      }
+    }
+
+    // 2. Render Entities
+    if (this.editor.entities.length > 0) {
+      const header = document.createElement('div');
+      header.className = 'pb-hierarchy-group-header';
+      header.textContent = 'ENTITIES';
+      list.appendChild(header);
+
+      for (const entity of this.editor.entities) {
+        const isSelected = this.editor.selectionManager.selectedEntity === entity;
+        const item = document.createElement('div');
+        item.className = `pb-hierarchy-item pb-hierarchy-entity ${isSelected ? 'selected' : ''}`;
+
+        let iconSvg = '';
+        let badgeText = '';
+        if (entity.type === 'player_spawn') {
+          iconSvg = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2"><circle cx="12" cy="7" r="4"/><path d="M5.5 21v-2a6.5 6.5 0 0 1 13 0v2"/></svg>`;
+          badgeText = `${entity.properties.yaw ?? 0}°`;
+        } else if (entity.type === 'light_point') {
+          const col = entity.properties.color || '#ffb366';
+          iconSvg = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="${col}" stroke-width="2"><path d="M9 18h6M10 22h4M12 2a7 7 0 0 0-7 7c0 2.5 1.5 4.5 3 6h8c1.5-1.5 3-3.5 3-6a7 7 0 0 0-7-7z"/></svg>`;
+          badgeText = `${(entity.properties.intensity ?? 3.5).toFixed(1)}x`;
+        } else if (entity.type === 'light_spot') {
+          const col = entity.properties.color || '#ffffff';
+          iconSvg = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="${col}" stroke-width="2"><path d="m15 4-3 3 7 7 3-3z"/><path d="m9 10-6 6v3h3l6-6"/><line x1="14" y1="9" x2="19" y2="14"/></svg>`;
+          badgeText = `${entity.properties.angle ?? 45}°`;
+        }
+
+        item.innerHTML = `
+          ${iconSvg}
+          <span class="pb-item-name">${entity.name}</span>
+          <span class="pb-item-faces">${badgeText}</span>
+        `;
+        item.addEventListener('click', () => {
+          if (!this.editor) return;
+          this.editor.selectionManager.selectEntity(entity);
+          this.editor.gizmoManager.updateGizmoAttachment();
+          this.updateUI();
+        });
+        list.appendChild(item);
+      }
     }
   }
 

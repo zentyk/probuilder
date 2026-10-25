@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { EditableMesh } from './EditableMesh';
+import type { Entity } from './Entity';
 
 export class PlaytestController {
   public isActive = false;
@@ -45,22 +46,33 @@ export class PlaytestController {
     this.levelMeshes = meshes;
   }
 
-  public start(editorTarget: THREE.Vector3): void {
+  public start(editorTarget: THREE.Vector3, spawnEntity?: Entity | null): void {
     this.isActive = true;
 
     // Save editor camera
     this.savedCameraPos.copy(this.camera.position);
     this.savedCameraTarget.copy(editorTarget);
 
-    // Initial player position
-    this.playerPos.copy(this.camera.position);
+    if (spawnEntity) {
+      // Spawn at the Player Start Entity position & yaw (combining entity yaw and group rotation)
+      this.playerPos.copy(spawnEntity.group.position);
+      this.yaw = spawnEntity.group.rotation.y - ((spawnEntity.properties.yaw || 0) * Math.PI) / 180;
+      this.pitch = 0;
+    } else {
+      // Fallback: spawn at editor camera position
+      this.playerPos.copy(this.camera.position);
+      const forward = new THREE.Vector3();
+      this.camera.getWorldDirection(forward);
+      this.yaw = Math.atan2(-forward.x, -forward.z);
+      this.pitch = Math.asin(THREE.MathUtils.clamp(forward.y, -0.99, 0.99));
+    }
+
     this.playerVelocity.set(0, 0, 0);
 
-    // Derive initial yaw and pitch from camera forward
-    const forward = new THREE.Vector3();
-    this.camera.getWorldDirection(forward);
-    this.yaw = Math.atan2(forward.x, forward.z) + Math.PI;
-    this.pitch = Math.asin(THREE.MathUtils.clamp(forward.y, -0.99, 0.99));
+    // Set camera position to player eye height immediately
+    this.camera.position.set(this.playerPos.x, this.playerPos.y + this.eyeHeight, this.playerPos.z);
+    const euler = new THREE.Euler(this.pitch, this.yaw, 0, 'YXZ');
+    this.camera.quaternion.setFromEuler(euler);
 
     // Request pointer lock
     this.domElement.requestPointerLock?.();
@@ -86,17 +98,24 @@ export class PlaytestController {
     const euler = new THREE.Euler(this.pitch, this.yaw, 0, 'YXZ');
     this.camera.quaternion.setFromEuler(euler);
 
-    // Calculate movement direction relative to camera yaw
+    // Calculate horizontal forward and right vectors directly from camera orientation
+    const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(this.camera.quaternion);
+    forward.y = 0;
+    if (forward.lengthSq() > 0) forward.normalize();
+
+    const right = new THREE.Vector3(1, 0, 0).applyQuaternion(this.camera.quaternion);
+    right.y = 0;
+    if (right.lengthSq() > 0) right.normalize();
+
+    // Build movement direction
     const moveDir = new THREE.Vector3();
-    if (this.keys.forward) moveDir.z -= 1;
-    if (this.keys.backward) moveDir.z += 1;
-    if (this.keys.left) moveDir.x -= 1;
-    if (this.keys.right) moveDir.x += 1;
+    if (this.keys.forward) moveDir.add(forward);
+    if (this.keys.backward) moveDir.sub(forward);
+    if (this.keys.left) moveDir.sub(right);
+    if (this.keys.right) moveDir.add(right);
 
     if (moveDir.lengthSq() > 0) {
       moveDir.normalize();
-      // Rotate by yaw
-      moveDir.applyAxisAngle(new THREE.Vector3(0, 1, 0), this.yaw + Math.PI);
     }
 
     // Apply horizontal velocity

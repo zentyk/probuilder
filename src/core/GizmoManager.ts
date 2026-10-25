@@ -80,13 +80,18 @@ export class GizmoManager {
   }
 
   public updateGizmoAttachment(): void {
-    const mesh = this.selectionManager.selectedMesh;
-    if (!mesh) {
+    if (this.selectionManager.mode === 'brush') {
       this.transformControls.detach();
       return;
     }
 
-    if (this.selectionManager.mode === 'brush') {
+    if (this.selectionManager.selectedEntity) {
+      this.transformControls.attach(this.selectionManager.selectedEntity.group);
+      return;
+    }
+
+    const mesh = this.selectionManager.selectedMesh;
+    if (!mesh) {
       this.transformControls.detach();
       return;
     }

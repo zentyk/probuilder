@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { EditableMesh } from './EditableMesh';
-import { makeEdgeKey } from './types';
+import { makeEdgeKey, type ClipMode } from './types';
 
 export class GeometryOperations {
   /**
@@ -498,5 +498,302 @@ export class GeometryOperations {
     mesh.addFace([v0, v1, v2, v3]); // Bottom (-Y)
     mesh.addFace([v2, v1, v5, v6]); // Right (+X)
     mesh.addFace([v0, v3, v7, v4]); // Left (-X)
+  }
+
+  /**
+   * Slice an EditableMesh with an infinite 3D Plane.
+   * Produces watertight manifold meshes for Side A (front/positive normal)
+   * and/or Side B (back/negative normal) based on ClipMode.
+   */
+  public static sliceMesh(
+    mesh: EditableMesh,
+    worldPlane: THREE.Plane,
+    mode: ClipMode = 'split_both'
+  ): { sideA: EditableMesh | null; sideB: EditableMesh | null } {
+    // 1. Transform world plane into mesh's local coordinate space
+    mesh.group.updateMatrixWorld(true);
+    const invMatrix = mesh.group.matrixWorld.clone().invert();
+    const localPlane = worldPlane.clone().applyMatrix4(invMatrix);
+
+    const EPSILON = 1e-5;
+
+    // 2. Compute signed distances of all vertices to local plane
+    const vertDistances = mesh.vertices.map((v) => {
+      const d = localPlane.distanceToPoint(v);
+      return Math.abs(d) < EPSILON ? 0 : d;
+    });
+
+    let hasPositive = false;
+    let hasNegative = false;
+    for (const d of vertDistances) {
+      if (d > 0) hasPositive = true;
+      if (d < 0) hasNegative = true;
+    }
+
+    // If all vertices are strictly on one side, no split needed
+    if (!hasPositive && !hasNegative) {
+      return {
+        sideA: mode !== 'keep_back' ? mesh.clone() : null,
+        sideB: mode !== 'keep_front' ? mesh.clone() : null,
+      };
+    }
+    if (!hasNegative) {
+      return {
+        sideA: mode !== 'keep_back' ? mesh.clone() : null,
+        sideB: null,
+      };
+    }
+    if (!hasPositive) {
+      return {
+        sideA: null,
+        sideB: mode !== 'keep_front' ? mesh.clone() : null,
+      };
+    }
+
+    // 3. Slice each face of the mesh
+    interface PolygonData {
+      vertices: THREE.Vector3[];
+      materialIndex: number;
+    }
+
+    const polysA: PolygonData[] = [];
+    const polysB: PolygonData[] = [];
+
+    // Directed intersection line segments along the plane (from exit point of Side A to entry point of Side A)
+    interface CutSegment {
+      p0: THREE.Vector3;
+      p1: THREE.Vector3;
+      materialIndex: number;
+    }
+    const cutSegmentsA: CutSegment[] = [];
+
+    for (const face of mesh.faces) {
+      const vIndices = face.vertexIndices;
+      const len = vIndices.length;
+      if (len < 3) continue;
+
+      const fVertices = vIndices.map((idx) => mesh.vertices[idx]);
+      const fDistances = vIndices.map((idx) => vertDistances[idx]);
+
+      let allPos = true;
+      let allNeg = true;
+      for (const d of fDistances) {
+        if (d < -EPSILON) allPos = false;
+        if (d > EPSILON) allNeg = false;
+      }
+
+      if (allPos) {
+        polysA.push({
+          vertices: fVertices.map((v) => v.clone()),
+          materialIndex: face.materialIndex ?? 0,
+        });
+        continue;
+      }
+      if (allNeg) {
+        polysB.push({
+          vertices: fVertices.map((v) => v.clone()),
+          materialIndex: face.materialIndex ?? 0,
+        });
+        continue;
+      }
+
+      // Face intersects the plane - perform Sutherland-Hodgman polygon clipping
+      const facePolyA: THREE.Vector3[] = [];
+      const facePolyB: THREE.Vector3[] = [];
+      let enterPt: THREE.Vector3 | null = null;
+      let exitPt: THREE.Vector3 | null = null;
+
+      for (let i = 0; i < len; i++) {
+        const curr = fVertices[i];
+        const next = fVertices[(i + 1) % len];
+        const d0 = fDistances[i];
+        const d1 = fDistances[(i + 1) % len];
+
+        if (d0 >= 0) facePolyA.push(curr.clone());
+        if (d0 <= 0) facePolyB.push(curr.clone());
+
+        // Check if edge crosses the plane
+        if ((d0 > 0 && d1 < 0) || (d0 < 0 && d1 > 0)) {
+          const t = -d0 / (d1 - d0);
+          const clampedT = Math.max(0, Math.min(1, t));
+          const intersect = new THREE.Vector3().lerpVectors(curr, next, clampedT);
+
+          facePolyA.push(intersect.clone());
+          facePolyB.push(intersect.clone());
+
+          if (d0 > 0 && d1 < 0) {
+            // Leaving Side A, entering Side B
+            exitPt = intersect;
+          } else {
+            // Leaving Side B, entering Side A
+            enterPt = intersect;
+          }
+        }
+      }
+
+      if (facePolyA.length >= 3) {
+        polysA.push({ vertices: facePolyA, materialIndex: face.materialIndex ?? 0 });
+      }
+      if (facePolyB.length >= 3) {
+        polysB.push({ vertices: facePolyB, materialIndex: face.materialIndex ?? 0 });
+      }
+
+      if (exitPt && enterPt && exitPt.distanceTo(enterPt) > EPSILON) {
+        cutSegmentsA.push({ p0: exitPt.clone(), p1: enterPt.clone(), materialIndex: face.materialIndex ?? 0 });
+      }
+    }
+
+    // 4. Assemble watertight Cap Faces for Side A and Side B
+    // The cut segments form closed loop(s) on the cutting plane.
+    const capLoops: THREE.Vector3[][] = [];
+    const remainingSegs = [...cutSegmentsA];
+    const matchTol = 1e-4;
+
+    while (remainingSegs.length > 0) {
+      const loop: THREE.Vector3[] = [];
+      const first = remainingSegs.shift()!;
+      loop.push(first.p0.clone());
+      let currentTip = first.p1;
+
+      let found = true;
+      while (found && remainingSegs.length > 0) {
+        found = false;
+        let bestIdx = -1;
+        let bestDist = Infinity;
+        let isReversed = false;
+
+        for (let i = 0; i < remainingSegs.length; i++) {
+          const seg = remainingSegs[i];
+          const d0 = currentTip.distanceTo(seg.p0);
+          const d1 = currentTip.distanceTo(seg.p1);
+
+          if (d0 < matchTol && d0 < bestDist) {
+            bestDist = d0;
+            bestIdx = i;
+            isReversed = false;
+          } else if (d1 < matchTol && d1 < bestDist) {
+            bestDist = d1;
+            bestIdx = i;
+            isReversed = true;
+          }
+        }
+
+        if (bestIdx !== -1) {
+          const nextSeg = remainingSegs.splice(bestIdx, 1)[0];
+          if (!isReversed) {
+            loop.push(nextSeg.p0.clone());
+            currentTip = nextSeg.p1;
+          } else {
+            loop.push(nextSeg.p1.clone());
+            currentTip = nextSeg.p0;
+          }
+          found = true;
+        }
+
+        if (currentTip.distanceTo(loop[0]) < matchTol) {
+          // Closed loop found!
+          break;
+        }
+      }
+
+      if (loop.length >= 3) {
+        capLoops.push(loop);
+      }
+    }
+
+    // Robust Fallback: If chaining didn't capture a loop but we have cut segments (e.g. convex cross-section):
+    if (capLoops.length === 0 && cutSegmentsA.length >= 3) {
+      const uniquePts: THREE.Vector3[] = [];
+      for (const seg of cutSegmentsA) {
+        for (const pt of [seg.p0, seg.p1]) {
+          if (!uniquePts.some((u) => u.distanceTo(pt) < matchTol)) {
+            uniquePts.push(pt.clone());
+          }
+        }
+      }
+      if (uniquePts.length >= 3) {
+        const center = new THREE.Vector3();
+        for (const pt of uniquePts) center.add(pt);
+        center.divideScalar(uniquePts.length);
+
+        const n = localPlane.normal.clone().normalize();
+        const u = (Math.abs(n.y) < 0.99 ? new THREE.Vector3(0, 1, 0).cross(n) : new THREE.Vector3(1, 0, 0).cross(n)).normalize();
+        const v = n.clone().cross(u).normalize();
+
+        uniquePts.sort((pA, pB) => {
+          const angA = Math.atan2(pA.clone().sub(center).dot(v), pA.clone().sub(center).dot(u));
+          const angB = Math.atan2(pB.clone().sub(center).dot(v), pB.clone().sub(center).dot(u));
+          return angA - angB;
+        });
+
+        capLoops.push(uniquePts);
+      }
+    }
+
+    // Add cap faces to polysA and polysB
+    const capMatIndex = mesh.faces[0]?.materialIndex ?? 0;
+    for (const loop of capLoops) {
+      const loopNormal = new THREE.Vector3();
+      for (let i = 0; i < loop.length; i++) {
+        const c = loop[i];
+        const n = loop[(i + 1) % loop.length];
+        loopNormal.x += (c.y - n.y) * (c.z + n.z);
+        loopNormal.y += (c.z - n.z) * (c.x + n.x);
+        loopNormal.z += (c.x - n.x) * (c.y + n.y);
+      }
+      loopNormal.normalize();
+
+      // For Side A, the interior is on the positive side of localPlane,
+      // so the cap face normal MUST face towards -localPlane.normal!
+      const dotA = loopNormal.dot(localPlane.normal);
+      const loopForA = dotA < 0 ? [...loop] : [...loop].reverse();
+      const loopForB = dotA > 0 ? [...loop] : [...loop].reverse();
+
+      polysA.push({ vertices: loopForA, materialIndex: capMatIndex });
+      polysB.push({ vertices: loopForB, materialIndex: capMatIndex });
+    }
+
+    // 5. Build EditableMesh for Side A & Side B
+    const buildMesh = (nameSuffix: string, polygons: PolygonData[]): EditableMesh | null => {
+      if (polygons.length === 0) return null;
+
+      const newMesh = new EditableMesh(`${mesh.name}_${nameSuffix}`);
+      newMesh.group.position.copy(mesh.group.position);
+      newMesh.group.rotation.copy(mesh.group.rotation);
+      newMesh.group.scale.copy(mesh.group.scale);
+
+      // Vertex deduplication map
+      const vMap = new Map<string, number>();
+      const getOrCreateV = (pt: THREE.Vector3): number => {
+        const key = `${pt.x.toFixed(4)}_${pt.y.toFixed(4)}_${pt.z.toFixed(4)}`;
+        if (vMap.has(key)) return vMap.get(key)!;
+        const idx = newMesh.addVertex(pt.clone());
+        vMap.set(key, idx);
+        return idx;
+      };
+
+      for (const poly of polygons) {
+        if (poly.vertices.length < 3) continue;
+        const indices = poly.vertices.map((v) => getOrCreateV(v));
+        // Remove consecutive duplicate indices
+        const cleanIndices: number[] = [];
+        for (let i = 0; i < indices.length; i++) {
+          if (indices[i] !== indices[(i + 1) % indices.length]) {
+            cleanIndices.push(indices[i]);
+          }
+        }
+        if (cleanIndices.length >= 3) {
+          newMesh.addFace(cleanIndices, poly.materialIndex);
+        }
+      }
+
+      newMesh.rebuildGeometry();
+      return newMesh;
+    };
+
+    const sideA = mode !== 'keep_back' ? buildMesh('cut_a', polysA) : null;
+    const sideB = mode !== 'keep_front' ? buildMesh('cut_b', polysB) : null;
+
+    return { sideA, sideB };
   }
 }

@@ -12,7 +12,9 @@ import { ViewCube } from './ViewCube';
 import { ExportManager } from './ExportManager';
 import { BrushTool } from './BrushTool';
 import { TextureTool } from './TextureTool';
-import type { SelectionMode, ShapeType, TransformSpace, TransformTool } from './types';
+import { ClipTool } from './ClipTool';
+import { Entity } from './Entity';
+import type { EntityType, SelectionMode, ShapeType, TransformSpace, TransformTool } from './types';
 
 export class Editor {
   public container: HTMLElement;
@@ -22,6 +24,7 @@ export class Editor {
   public orbitControls: OrbitControls;
 
   public meshes: EditableMesh[] = [];
+  public entities: Entity[] = [];
   public selectionManager: SelectionManager;
   public gizmoManager: GizmoManager;
   public historyManager: HistoryManager;
@@ -30,6 +33,7 @@ export class Editor {
   public viewCube: ViewCube;
   public brushTool: BrushTool;
   public textureTool: TextureTool;
+  public clipTool: ClipTool;
 
   private gridHelper: THREE.GridHelper;
   private clock = new THREE.Clock();
@@ -85,6 +89,7 @@ export class Editor {
     this.viewCube = new ViewCube(container, this.camera);
     this.brushTool = new BrushTool(this);
     this.textureTool = new TextureTool(this);
+    this.clipTool = new ClipTool(this);
 
     this.setupViewCube();
     this.setupEventListeners();
@@ -153,6 +158,18 @@ export class Editor {
     this.applyMaterialToMesh(initialStairs, 'dev_gray');
     this.applyMaterialToMesh(initialRamp, 'dev_blue');
 
+    // Add initial Player Spawn Entity
+    const initialSpawn = new Entity('player_spawn', 'Player_Start_1');
+    initialSpawn.group.position.set(0, 0, 4.5);
+    initialSpawn.updateProperties({ yaw: 0 });
+    this.addEntity(initialSpawn, false);
+
+    // Add initial Point Light
+    const initialLight = new Entity('light_point', 'Light_Warm_1');
+    initialLight.group.position.set(-1, 2.8, 0);
+    initialLight.updateProperties({ color: '#ffb366', intensity: 4.5, distance: 14.0 });
+    this.addEntity(initialLight, false);
+
     this.selectionManager.selectMesh(initialCube);
     this.gizmoManager.updateGizmoAttachment();
 
@@ -192,6 +209,56 @@ export class Editor {
       }
       this.notifyUI();
     }
+  }
+
+  public addEntity(entity: Entity, record = true): void {
+    this.entities.push(entity);
+    this.scene.add(entity.group);
+
+    if (record) {
+      this.recordHistory(`Add ${entity.name}`);
+      this.selectionManager.selectEntity(entity);
+      this.gizmoManager.updateGizmoAttachment();
+    }
+    this.notifyUI();
+  }
+
+  public removeEntity(entity: Entity, record = true): void {
+    const idx = this.entities.indexOf(entity);
+    if (idx !== -1) {
+      this.entities.splice(idx, 1);
+      this.scene.remove(entity.group);
+      entity.dispose();
+
+      if (this.selectionManager.selectedEntity === entity) {
+        this.selectionManager.clearAll();
+        this.gizmoManager.updateGizmoAttachment();
+      }
+
+      if (record) {
+        this.recordHistory(`Delete ${entity.name}`);
+      }
+      this.notifyUI();
+    }
+  }
+
+  public createEntity(type: EntityType, pos?: THREE.Vector3): Entity {
+    const entity = new Entity(type);
+    if (pos) {
+      entity.group.position.copy(pos);
+    } else {
+      const target = this.orbitControls.target.clone();
+      if (type === 'player_spawn') {
+        entity.group.position.set(target.x, 0, target.z);
+      } else if (type === 'light_point') {
+        entity.group.position.set(target.x, 2.5, target.z);
+      } else if (type === 'light_spot') {
+        entity.group.position.set(target.x, 3.5, target.z);
+      }
+    }
+
+    this.addEntity(entity, true);
+    return entity;
   }
 
   public createShape(type: ShapeType, params: any = {}): EditableMesh {
@@ -358,6 +425,13 @@ export class Editor {
   }
 
   public deleteSelected(): void {
+    if (this.selectionManager.selectedEntity) {
+      const ent = this.selectionManager.selectedEntity;
+      this.removeEntity(ent, true);
+      this.toast(`Deleted ${ent.name}`, 'info');
+      return;
+    }
+
     const mesh = this.selectionManager.selectedMesh;
     if (!mesh) return;
 
@@ -405,6 +479,15 @@ export class Editor {
   }
 
   public duplicateSelected(): void {
+    if (this.selectionManager.selectedEntity) {
+      const ent = this.selectionManager.selectedEntity;
+      const clone = ent.clone();
+      clone.group.position.add(new THREE.Vector3(1, 0, 1));
+      this.addEntity(clone, true);
+      this.toast(`Duplicated ${ent.name}`, 'success');
+      return;
+    }
+
     const mesh = this.selectionManager.selectedMesh;
     if (!mesh) return;
 
@@ -545,14 +628,27 @@ export class Editor {
     }
   }
 
-  public enterPlaytest(): void {
+  public enterPlaytest(targetSpawn?: Entity): void {
     this.selectionManager.clearElementSelection();
     this.gizmoManager.transformControls.detach();
     this.orbitControls.enabled = false;
 
+    // Look for specified spawn, currently selected spawn, or first player spawn entity
+    const playerSpawn = targetSpawn || (this.selectionManager.selectedEntity?.type === 'player_spawn'
+      ? this.selectionManager.selectedEntity
+      : this.entities.find((e) => e.type === 'player_spawn'));
+
+    // Hide editor helpers during playtest
+    for (const ent of this.entities) {
+      ent.setPlaytestVisibility(false);
+    }
+
     this.playtestController.setLevelMeshes(this.meshes);
-    this.playtestController.start(this.orbitControls.target);
-    this.toast('Entered Playtest Mode. Press ESC to exit.', 'info');
+    this.playtestController.start(this.orbitControls.target, playerSpawn);
+    this.toast(
+      playerSpawn ? `Spawned at ${playerSpawn.name}! Press ESC to exit.` : 'Entered Playtest Mode. Press ESC to exit.',
+      'info'
+    );
     this.notifyUI();
   }
 
@@ -560,6 +656,12 @@ export class Editor {
     const restoredTarget = this.playtestController.stop();
     this.orbitControls.enabled = true;
     this.orbitControls.target.copy(restoredTarget);
+
+    // Restore editor helpers
+    for (const ent of this.entities) {
+      ent.setPlaytestVisibility(true);
+    }
+
     this.gizmoManager.updateGizmoAttachment();
     this.toast('Exited Playtest Mode', 'info');
     this.notifyUI();
@@ -588,6 +690,7 @@ export class Editor {
       version: 1,
       createdAt: new Date().toISOString(),
       meshes: this.meshes.map((m) => m.toJSON()),
+      entities: this.entities.map((e) => e.toJSON()),
     };
     const jsonStr = JSON.stringify(sceneData, null, 2);
     ExportManager.downloadFile('voskel_scene.json', jsonStr, 'application/json');
@@ -600,9 +703,12 @@ export class Editor {
       const data = JSON.parse(jsonString);
       if (!data.meshes || !Array.isArray(data.meshes)) throw new Error('Invalid scene format');
 
-      // Clear current meshes
+      // Clear current meshes & entities
       for (const m of [...this.meshes]) {
         this.removeMesh(m, false);
+      }
+      for (const e of [...this.entities]) {
+        this.removeEntity(e, false);
       }
 
       for (const meshData of data.meshes) {
@@ -611,10 +717,17 @@ export class Editor {
         this.addMesh(loadedMesh, false);
       }
 
+      if (data.entities && Array.isArray(data.entities)) {
+        for (const entData of data.entities) {
+          const loadedEntity = Entity.fromJSON(entData);
+          this.addEntity(loadedEntity, false);
+        }
+      }
+
       this.selectionManager.clearAll();
       this.gizmoManager.updateGizmoAttachment();
       this.recordHistory('Load Scene');
-      this.toast(`Loaded ${data.meshes.length} mesh(es)`, 'success');
+      this.toast(`Loaded ${data.meshes.length} mesh(es) & ${this.entities.length} entity(ies)`, 'success');
     } catch (err: any) {
       this.toast(`Failed to load scene: ${err.message}`, 'warn');
     }
@@ -624,13 +737,28 @@ export class Editor {
 
   public recordHistory(desc: string): void {
     const selectedId = this.selectionManager.selectedMesh ? this.selectionManager.selectedMesh.id : null;
-    this.historyManager.recordState(desc, this.meshes, selectedId, this.selectionManager.mode);
+    const selectedEntId = this.selectionManager.selectedEntity ? this.selectionManager.selectedEntity.id : null;
+    this.historyManager.recordState(
+      desc,
+      this.meshes,
+      selectedId,
+      this.selectionManager.mode,
+      this.entities,
+      selectedEntId
+    );
     this.notifyUI();
   }
 
   public undo(): void {
     const selectedId = this.selectionManager.selectedMesh ? this.selectionManager.selectedMesh.id : null;
-    const restored = this.historyManager.undo(this.meshes, selectedId, this.selectionManager.mode);
+    const selectedEntId = this.selectionManager.selectedEntity ? this.selectionManager.selectedEntity.id : null;
+    const restored = this.historyManager.undo(
+      this.meshes,
+      selectedId,
+      this.selectionManager.mode,
+      this.entities,
+      selectedEntId
+    );
     if (restored) {
       this.restoreSnapshot(restored);
       this.toast(`Undo: ${restored.description}`, 'info');
@@ -652,6 +780,12 @@ export class Editor {
     }
     this.meshes = [];
 
+    for (const e of [...this.entities]) {
+      this.scene.remove(e.group);
+      e.dispose();
+    }
+    this.entities = [];
+
     // Reconstruct meshes
     for (const data of snapshot.meshes) {
       const mesh = EditableMesh.fromJSON(data);
@@ -660,8 +794,20 @@ export class Editor {
       this.scene.add(mesh.group);
     }
 
+    // Reconstruct entities
+    if (snapshot.entities && Array.isArray(snapshot.entities)) {
+      for (const entData of snapshot.entities) {
+        const ent = Entity.fromJSON(entData);
+        this.entities.push(ent);
+        this.scene.add(ent.group);
+      }
+    }
+
     // Restore selection
-    if (snapshot.selectedMeshId) {
+    if (snapshot.selectedEntityId) {
+      const foundEnt = this.entities.find((e) => e.id === snapshot.selectedEntityId);
+      this.selectionManager.selectEntity(foundEnt || null);
+    } else if (snapshot.selectedMeshId) {
       const found = this.meshes.find((m) => m.id === snapshot.selectedMeshId);
       this.selectionManager.selectMesh(found || null);
     } else {
@@ -680,6 +826,11 @@ export class Editor {
     dom.addEventListener('pointermove', (e) => {
       if (this.playtestController.isActive) return;
 
+      if (this.clipTool.isActive) {
+        this.clipTool.handlePointerMove(e.clientX, e.clientY);
+        return;
+      }
+
       const rect = dom.getBoundingClientRect();
       const ndcX = ((e.clientX - rect.left) / rect.width) * 2 - 1;
       const ndcY = -((e.clientY - rect.top) / rect.height) * 2 + 1;
@@ -690,11 +841,20 @@ export class Editor {
       }
 
       if (this.gizmoManager.isBusy() || this.gizmoManager.transformControls.axis !== null) return;
-      this.selectionManager.handlePointerMove(ndcX, ndcY, this.camera, this.meshes);
+      this.selectionManager.handlePointerMove(ndcX, ndcY, this.camera, this.meshes, this.entities);
     });
 
     dom.addEventListener('pointerdown', (e) => {
       if (this.playtestController.isActive) return;
+
+      // Clip Tool: Place cutting plane points on left-click
+      if (this.clipTool.isActive && e.button === 0) {
+        if (this.clipTool.handlePointerDown(e.clientX, e.clientY)) {
+          this.orbitControls.enabled = false;
+          this.isPointerDown = false;
+          return;
+        }
+      }
 
       if (this.brushTool.isActive) {
         if (e.button === 0) {
@@ -831,9 +991,12 @@ export class Editor {
         else this.setSelectionMode('brush');
       }
 
-      // Escape: cancel brush drag, close texture inspector, or exit brush mode
+      // Escape: cancel clip tool, cancel brush drag, close texture inspector, or exit brush mode
       if (e.key === 'Escape') {
-        if (this.brushTool.isDragging) {
+        if (this.clipTool.isActive) {
+          e.preventDefault();
+          this.clipTool.deactivate();
+        } else if (this.brushTool.isDragging) {
           e.preventDefault();
           this.brushTool.cancelDrag();
         } else if (this.textureTool.isActive) {
@@ -843,6 +1006,12 @@ export class Editor {
           e.preventDefault();
           this.setSelectionMode('object');
         }
+      }
+
+      // Enter: execute slice if ClipTool is active
+      if (e.code === 'Enter' && this.clipTool.isActive) {
+        e.preventDefault();
+        this.clipTool.executeCut();
       }
 
       // Tool Shortcuts: W (Translate), E (Rotate), R (Scale)
@@ -877,6 +1046,20 @@ export class Editor {
         }
       }
 
+      // Clip Tool: Shift+X (Hammer Knife Tool / Slicing Plane)
+      if (e.shiftKey && (e.code === 'KeyX' || e.key.toUpperCase() === 'X')) {
+        e.preventDefault();
+        if (this.clipTool.isActive) {
+          if (this.clipTool.plane) {
+            this.clipTool.cycleMode();
+          } else {
+            this.clipTool.deactivate();
+          }
+        } else {
+          this.clipTool.activate();
+        }
+      }
+
       // Geometry Shortcuts: Shift+E (Extrude), Shift+I (Inset), Shift+B (Bevel), Shift+A (Texture Inspector)
       if (e.shiftKey && (e.code === 'KeyA' || e.key.toUpperCase() === 'A')) {
         e.preventDefault();
@@ -901,6 +1084,11 @@ export class Editor {
         this.deleteSelected();
       }
     });
+  }
+
+  public toggleClipTool(): void {
+    this.clipTool.toggle();
+    this.notifyUI();
   }
 
   private animate = (): void => {

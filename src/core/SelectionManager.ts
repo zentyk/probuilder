@@ -1,11 +1,13 @@
 import * as THREE from 'three';
 import { EditableMesh } from './EditableMesh';
+import type { Entity } from './Entity';
 import type { SelectionMode } from './types';
 import { makeEdgeKey, parseEdgeKey } from './types';
 
 export class SelectionManager {
   public mode: SelectionMode = 'object';
   public selectedMesh: EditableMesh | null = null;
+  public selectedEntity: Entity | null = null;
   public selectedVertices = new Set<number>();
   public selectedEdges = new Set<string>();
   public selectedFaces = new Set<number>();
@@ -14,6 +16,7 @@ export class SelectionManager {
   public hoveredEdge: string | null = null;
   public hoveredFace: number | null = null;
   public hoveredMesh: EditableMesh | null = null;
+  public hoveredEntity: Entity | null = null;
 
   private raycaster = new THREE.Raycaster();
   private mousePos = new THREE.Vector2();
@@ -35,7 +38,8 @@ export class SelectionManager {
   }
 
   public selectMesh(mesh: EditableMesh | null): void {
-    if (this.selectedMesh === mesh) return;
+    if (this.selectedMesh === mesh && !this.selectedEntity) return;
+    this.selectedEntity = null;
     if (this.selectedMesh) {
       this.clearElementSelection();
       this.selectedMesh.updateSelectionVisuals(
@@ -50,6 +54,25 @@ export class SelectionManager {
     }
     this.selectedMesh = mesh;
     this.updateVisuals();
+    if (this.onSelectionChanged) this.onSelectionChanged();
+  }
+
+  public selectEntity(entity: Entity | null): void {
+    if (this.selectedEntity === entity && !this.selectedMesh) return;
+    if (this.selectedMesh) {
+      this.clearElementSelection();
+      this.selectedMesh.updateSelectionVisuals(
+        this.mode,
+        this.selectedVertices,
+        this.selectedEdges,
+        this.selectedFaces,
+        null,
+        null,
+        null
+      );
+      this.selectedMesh = null;
+    }
+    this.selectedEntity = entity;
     if (this.onSelectionChanged) this.onSelectionChanged();
   }
 
@@ -76,31 +99,44 @@ export class SelectionManager {
       );
     }
     this.selectedMesh = null;
+    this.selectedEntity = null;
     this.hoveredMesh = null;
+    this.hoveredEntity = null;
     if (this.onSelectionChanged) this.onSelectionChanged();
   }
 
   /**
-   * Handle hover raycasting over scene meshes
+   * Handle hover raycasting over scene meshes & entities
    */
   public handlePointerMove(
     ndcX: number,
     ndcY: number,
     camera: THREE.Camera,
-    meshes: EditableMesh[]
+    meshes: EditableMesh[],
+    entities: Entity[] = []
   ): void {
     this.mousePos.set(ndcX, ndcY);
     this.raycaster.setFromCamera(this.mousePos, camera);
 
     if (this.mode === 'object') {
-      const surfaceObjects = meshes.map((m) => m.surfaceMesh);
-      const intersects = this.raycaster.intersectObjects(surfaceObjects, false);
+      const surfaceObjects: THREE.Object3D[] = meshes.map((m) => m.surfaceMesh);
+      const entityHitObjects: THREE.Object3D[] = entities.map((e) => e.hitMesh);
+      const allObjects = [...surfaceObjects, ...entityHitObjects];
+
+      const intersects = this.raycaster.intersectObjects(allObjects, false);
 
       if (intersects.length > 0) {
-        const hit = intersects[0].object.userData.editableMesh as EditableMesh;
-        this.hoveredMesh = hit;
+        const hitObj = intersects[0].object;
+        if (hitObj.userData.isEntityHit) {
+          this.hoveredEntity = hitObj.userData.entity as Entity;
+          this.hoveredMesh = null;
+        } else {
+          this.hoveredMesh = hitObj.userData.editableMesh as EditableMesh;
+          this.hoveredEntity = null;
+        }
       } else {
         this.hoveredMesh = null;
+        this.hoveredEntity = null;
       }
       return;
     }
@@ -144,7 +180,10 @@ export class SelectionManager {
    */
   public handlePointerClick(isShift: boolean, _meshes?: EditableMesh[]): boolean {
     if (this.mode === 'object') {
-      if (this.hoveredMesh) {
+      if (this.hoveredEntity) {
+        this.selectEntity(this.hoveredEntity);
+        return true;
+      } else if (this.hoveredMesh) {
         this.selectMesh(this.hoveredMesh);
         return true;
       } else if (!isShift) {

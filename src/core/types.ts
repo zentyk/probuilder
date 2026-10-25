@@ -115,3 +115,6 @@ export interface EntityData {
   rotation: [number, number, number]; // Euler angles (radians)
   properties: EntityProperties;
 }
+
+export type ClipMode = 'keep_front' | 'keep_back' | 'split_both';
+

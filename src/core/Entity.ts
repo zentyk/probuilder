@@ -210,8 +210,8 @@ export class Entity {
         points.push(new THREE.Vector3(Math.cos(theta) * dist, Math.sin(theta) * dist, 0));
       }
       const geom = new THREE.BufferGeometry().setFromPoints(points);
-      geom.applyEuler(rotEuler);
       const line = new THREE.Line(geom, ringMat);
+      line.rotation.copy(rotEuler);
       this.helperGroup.add(line);
       this.rangeRings.push(line);
     };
@@ -390,8 +390,8 @@ export class Entity {
   public applySpawnYaw(yawDeg: number): void {
     this.properties.yaw = yawDeg;
     if (this.playerArrow) {
-      // Rotate the arrow indicator around Y axis
-      this.playerArrow.rotation.y = (yawDeg * Math.PI) / 180;
+      // Rotate the arrow indicator around Y axis (clockwise / compass heading)
+      this.playerArrow.rotation.y = -(yawDeg * Math.PI) / 180;
     }
   }
 

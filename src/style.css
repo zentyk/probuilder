@@ -1519,3 +1519,344 @@ html, body, #app {
   border-top: 1px solid #25293a;
   padding-top: 10px;
 }
+
+/* ==========================================================================
+   Entities System (Player Spawn & Lights - TrenchBroom / Hammer style)
+   ========================================================================== */
+
+.pb-entity-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.pb-entity-btn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  background: #181b25;
+  border: 1px solid #282d3d;
+  border-radius: 6px;
+  color: #e2e8f0;
+  cursor: pointer;
+  transition: all 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+  text-align: left;
+  user-select: none;
+}
+
+.pb-entity-btn:hover {
+  background: #202433;
+  border-color: #3b435b;
+  transform: translateY(-1px);
+}
+
+.pb-entity-btn:active {
+  transform: translateY(0);
+}
+
+.pb-entity-btn-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 6px;
+  flex-shrink: 0;
+}
+
+.pb-entity-btn-icon.spawn {
+  background: rgba(16, 185, 129, 0.12);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  color: #10b981;
+}
+
+.pb-entity-btn-icon.light {
+  background: rgba(245, 158, 11, 0.12);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  color: #f59e0b;
+}
+
+.pb-entity-btn-icon.spot {
+  background: rgba(56, 189, 248, 0.12);
+  border: 1px solid rgba(56, 189, 248, 0.3);
+  color: #38bdf8;
+}
+
+.pb-entity-btn-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.pb-entity-btn-name {
+  font-size: 12px;
+  font-weight: 600;
+  color: #f1f5f9;
+}
+
+.pb-entity-btn-sub {
+  font-size: 10px;
+  color: #64748b;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+/* Hierarchy Groups & Entities */
+.pb-hierarchy-group-header {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: #64748b;
+  padding: 8px 6px 4px 6px;
+  border-bottom: 1px solid #1f2331;
+  margin-top: 4px;
+}
+
+.pb-hierarchy-entity .pb-item-name {
+  color: #e2e8f0;
+}
+
+.pb-hierarchy-entity.selected {
+  background: rgba(249, 115, 22, 0.15);
+  border-left: 2px solid #f97316;
+}
+
+/* Entity Inspector */
+.pb-entity-inspector {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.pb-entity-row {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-bottom: 10px;
+}
+
+.pb-entity-row label {
+  font-size: 11px;
+  font-weight: 600;
+  color: #94a3b8;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.pb-entity-subprops {
+  display: flex;
+  flex-direction: column;
+}
+
+.pb-entity-yaw-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.pb-entity-yaw-num {
+  width: 55px;
+  flex: none;
+}
+
+.pb-compass-chips {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.pb-entity-action-box {
+  margin-top: 10px;
+}
+
+.pb-light-color-picker-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: #181b25;
+  border: 1px solid #282d3d;
+  padding: 4px 8px;
+  border-radius: 6px;
+}
+
+.pb-color-swatch-input {
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  background: transparent;
+  padding: 0;
+}
+
+.pb-color-swatch-input::-webkit-color-swatch-wrapper {
+  padding: 0;
+}
+
+.pb-color-swatch-input::-webkit-color-swatch {
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 4px;
+}
+
+.pb-hex-text {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  font-weight: 600;
+  color: #f1f5f9;
+}
+
+.pb-light-presets-row {
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  gap: 4px;
+  margin-top: 6px;
+  margin-bottom: 12px;
+}
+
+.pb-light-chip {
+  height: 20px;
+  border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  cursor: pointer;
+  transition: transform 0.1s ease, border-color 0.1s ease;
+}
+
+.pb-light-chip:hover {
+  transform: scale(1.12);
+  border-color: #ffffff;
+}
+
+.pb-entity-checkbox-row {
+  margin-top: 4px;
+}
+
+.pb-checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  font-size: 12px !important;
+  color: #cbd5e1 !important;
+  text-transform: none !important;
+  user-select: none;
+}
+
+.pb-checkbox-label input[type="checkbox"] {
+  accent-color: #f97316;
+  width: 15px;
+  height: 15px;
+  cursor: pointer;
+}
+
+/* ==========================================================================
+   Floating Clip Tool HUD (Hammer Knife Tool / Shift+X)
+   ========================================================================== */
+
+.pb-clip-hud {
+  position: absolute;
+  top: 18px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 370px;
+  z-index: 1100;
+  background: rgba(18, 20, 28, 0.95);
+  border: 1px solid rgba(249, 115, 22, 0.45);
+  border-radius: 10px;
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.65), 0 0 16px rgba(249, 115, 22, 0.2);
+  display: flex;
+  flex-direction: column;
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  animation: pbClipFadeIn 0.16s ease-out;
+  user-select: none;
+}
+
+@keyframes pbClipFadeIn {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -8px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
+
+.pb-clip-hud-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  background: #13151f;
+  border-bottom: 1px solid #262a3a;
+  border-radius: 10px 10px 0 0;
+}
+
+.pb-clip-hud-title-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.pb-clip-hud-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: #f8fafc;
+  letter-spacing: 0.02em;
+}
+
+.pb-clip-hud-body {
+  padding: 10px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.pb-clip-guidance {
+  font-size: 11px;
+  color: #94a3b8;
+  background: #11131a;
+  border: 1px solid #232737;
+  border-radius: 6px;
+  padding: 7px 10px;
+  text-align: center;
+  font-family: var(--font-sans);
+}
+
+.pb-clip-mode-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.pb-clip-row-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.pb-clip-mode-chips {
+  display: flex;
+  gap: 4px;
+}
+
+.pb-clip-actions-row {
+  display: grid;
+  grid-template-columns: 1.4fr 1fr;
+  gap: 8px;
+  margin-top: 2px;
+}
+
+.pb-clip-actions-row button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  filter: grayscale(0.5);
+}
+
