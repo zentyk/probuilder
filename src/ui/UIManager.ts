@@ -36,7 +36,7 @@ export class UIManager {
               </svg>
             </div>
             <div class="pb-brand-text">
-              <span class="pb-title">PROBUILDER</span>
+              <span class="pb-title">VOSKEL</span>
               <span class="pb-badge">WEBGL</span>
             </div>
           </div>
@@ -368,7 +368,7 @@ export class UIManager {
                 <span class="pb-section-title">DEV MATERIALS</span>
               </div>
               <div class="pb-material-palette">
-                <div class="pb-mat-chip active" data-mat="dev_orange" title="ProBuilder Orange">
+                <div class="pb-mat-chip active" data-mat="dev_orange" title="Voskel Orange">
                   <span class="pb-mat-color" style="background:#e66b1a;"></span>
                   <span>Orange</span>
                 </div>

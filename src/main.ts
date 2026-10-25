@@ -18,7 +18,7 @@ window.addEventListener('DOMContentLoaded', () => {
   uiManager.bindEditor(editor);
 
   console.log(
-    '%c ProBuilder WebGL Editor %c Ready for 3D level prototyping! ',
+    '%c Voskel 3D Level Editor %c Ready for level prototyping! ',
     'background: #f97316; color: white; font-weight: bold; padding: 4px 8px; border-radius: 4px 0 0 4px;',
     'background: #1e2029; color: #38bdf8; padding: 4px 8px; border-radius: 0 4px 4px 0;'
   );

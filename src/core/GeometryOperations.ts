@@ -335,4 +335,168 @@ export class GeometryOperations {
       face.vertexIndices = face.vertexIndices.map((oldIdx) => oldToNew.get(oldIdx)!);
     }
   }
+
+  /**
+   * TrenchBroom / Hammer "Make Hollow" Tool
+   * Hollows out a solid box or mesh volume into a room with customizable wall thickness.
+   * Creates 6 watertight solid slabs: Floor, Ceiling, Front, Back, Left, Right.
+   */
+  public static makeHollow(
+    mesh: EditableMesh,
+    wallThickness = 0.25
+  ): EditableMesh {
+    const bbox = new THREE.Box3();
+    for (const v of mesh.vertices) {
+      bbox.expandByPoint(v);
+    }
+
+    const x0 = bbox.min.x;
+    const x1 = bbox.max.x;
+    const y0 = bbox.min.y;
+    const y1 = bbox.max.y;
+    const z0 = bbox.min.z;
+    const z1 = bbox.max.z;
+
+    const width = x1 - x0;
+    const height = y1 - y0;
+    const depth = z1 - z0;
+
+    const isOutside = wallThickness < 0;
+    const absT = Math.abs(wallThickness);
+    let t = absT;
+    let outerX0 = x0, outerX1 = x1;
+    let outerY0 = y0, outerY1 = y1;
+    let outerZ0 = z0, outerZ1 = z1;
+    let innerX0 = x0, innerX1 = x1;
+    let innerY0 = y0, innerY1 = y1;
+    let innerZ0 = z0, innerZ1 = z1;
+
+    if (isOutside) {
+      t = Math.max(0.02, absT);
+      outerX0 -= t; outerX1 += t;
+      outerY0 -= t; outerY1 += t;
+      outerZ0 -= t; outerZ1 += t;
+    } else {
+      const maxAllowedT = Math.min(width, height, depth) / 2.05;
+      t = Math.max(0.02, Math.min(absT, maxAllowedT));
+      innerX0 += t; innerX1 -= t;
+      innerY0 += t; innerY1 -= t;
+      innerZ0 += t; innerZ1 -= t;
+    }
+
+    const hollowMesh = new EditableMesh(`${mesh.name}_Room`);
+    hollowMesh.group.position.copy(mesh.group.position);
+    hollowMesh.group.rotation.copy(mesh.group.rotation);
+    hollowMesh.group.scale.copy(mesh.group.scale);
+
+    // 1. Floor slab
+    this.addBoxToMesh(hollowMesh, outerX0, outerX1, outerY0, innerY0, outerZ0, outerZ1);
+    // 2. Ceiling slab
+    this.addBoxToMesh(hollowMesh, outerX0, outerX1, innerY1, outerY1, outerZ0, outerZ1);
+    // 3. Front wall (-Z)
+    this.addBoxToMesh(hollowMesh, outerX0, outerX1, innerY0, innerY1, outerZ0, innerZ0);
+    // 4. Back wall (+Z)
+    this.addBoxToMesh(hollowMesh, outerX0, outerX1, innerY0, innerY1, innerZ1, outerZ1);
+    // 5. Left wall (-X)
+    this.addBoxToMesh(hollowMesh, outerX0, innerX0, innerY0, innerY1, innerZ0, innerZ1);
+    // 6. Right wall (+X)
+    this.addBoxToMesh(hollowMesh, innerX1, outerX1, innerY0, innerY1, innerZ0, innerZ1);
+
+    hollowMesh.rebuildGeometry();
+    return hollowMesh;
+  }
+
+  public static makeHollowSeparateSlabs(
+    mesh: EditableMesh,
+    wallThickness = 0.25
+  ): EditableMesh[] {
+    const bbox = new THREE.Box3();
+    for (const v of mesh.vertices) {
+      bbox.expandByPoint(v);
+    }
+
+    const x0 = bbox.min.x;
+    const x1 = bbox.max.x;
+    const y0 = bbox.min.y;
+    const y1 = bbox.max.y;
+    const z0 = bbox.min.z;
+    const z1 = bbox.max.z;
+
+    const width = x1 - x0;
+    const height = y1 - y0;
+    const depth = z1 - z0;
+
+    const isOutside = wallThickness < 0;
+    const absT = Math.abs(wallThickness);
+    let t = absT;
+    let outerX0 = x0, outerX1 = x1;
+    let outerY0 = y0, outerY1 = y1;
+    let outerZ0 = z0, outerZ1 = z1;
+    let innerX0 = x0, innerX1 = x1;
+    let innerY0 = y0, innerY1 = y1;
+    let innerZ0 = z0, innerZ1 = z1;
+
+    if (isOutside) {
+      t = Math.max(0.02, absT);
+      outerX0 -= t; outerX1 += t;
+      outerY0 -= t; outerY1 += t;
+      outerZ0 -= t; outerZ1 += t;
+    } else {
+      const maxAllowedT = Math.min(width, height, depth) / 2.05;
+      t = Math.max(0.02, Math.min(absT, maxAllowedT));
+      innerX0 += t; innerX1 -= t;
+      innerY0 += t; innerY1 -= t;
+      innerZ0 += t; innerZ1 -= t;
+    }
+
+    const slabs = [
+      { name: 'Floor', x0: outerX0, x1: outerX1, y0: outerY0, y1: innerY0, z0: outerZ0, z1: outerZ1 },
+      { name: 'Ceiling', x0: outerX0, x1: outerX1, y0: innerY1, y1: outerY1, z0: outerZ0, z1: outerZ1 },
+      { name: 'Wall_Front', x0: outerX0, x1: outerX1, y0: innerY0, y1: innerY1, z0: outerZ0, z1: innerZ0 },
+      { name: 'Wall_Back', x0: outerX0, x1: outerX1, y0: innerY0, y1: innerY1, z0: innerZ1, z1: outerZ1 },
+      { name: 'Wall_Left', x0: outerX0, x1: innerX0, y0: innerY0, y1: innerY1, z0: innerZ0, z1: innerZ1 },
+      { name: 'Wall_Right', x0: innerX1, x1: outerX1, y0: innerY0, y1: innerY1, z0: innerZ0, z1: innerZ1 },
+    ];
+
+    const resultMeshes: EditableMesh[] = [];
+    for (const slab of slabs) {
+      const slabMesh = new EditableMesh(`${mesh.name}_${slab.name}`);
+      slabMesh.group.position.copy(mesh.group.position);
+      slabMesh.group.rotation.copy(mesh.group.rotation);
+      slabMesh.group.scale.copy(mesh.group.scale);
+      this.addBoxToMesh(slabMesh, slab.x0, slab.x1, slab.y0, slab.y1, slab.z0, slab.z1);
+      slabMesh.rebuildGeometry();
+      slabMesh.centerPivot();
+      resultMeshes.push(slabMesh);
+    }
+
+    return resultMeshes;
+  }
+
+  private static addBoxToMesh(
+    mesh: EditableMesh,
+    x0: number,
+    x1: number,
+    y0: number,
+    y1: number,
+    z0: number,
+    z1: number
+  ): void {
+    const v0 = mesh.addVertex(new THREE.Vector3(x0, y0, z0));
+    const v1 = mesh.addVertex(new THREE.Vector3(x1, y0, z0));
+    const v2 = mesh.addVertex(new THREE.Vector3(x1, y0, z1));
+    const v3 = mesh.addVertex(new THREE.Vector3(x0, y0, z1));
+
+    const v4 = mesh.addVertex(new THREE.Vector3(x0, y1, z0));
+    const v5 = mesh.addVertex(new THREE.Vector3(x1, y1, z0));
+    const v6 = mesh.addVertex(new THREE.Vector3(x1, y1, z1));
+    const v7 = mesh.addVertex(new THREE.Vector3(x0, y1, z1));
+
+    mesh.addFace([v3, v2, v6, v7]); // Front (+Z)
+    mesh.addFace([v1, v0, v4, v5]); // Back (-Z)
+    mesh.addFace([v4, v7, v6, v5]); // Top (+Y)
+    mesh.addFace([v0, v1, v2, v3]); // Bottom (-Y)
+    mesh.addFace([v2, v1, v5, v6]); // Right (+X)
+    mesh.addFace([v0, v3, v7, v4]); // Left (-X)
+  }
 }

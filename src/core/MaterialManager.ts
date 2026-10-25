@@ -29,7 +29,7 @@ export class MaterialManager {
     },
     {
       id: 'dev_orange',
-      name: 'ProBuilder Orange',
+      name: 'Voskel Orange',
       baseColor: '#e66b1a',
       gridColor: '#a84707',
       subGridColor: '#d15d11',

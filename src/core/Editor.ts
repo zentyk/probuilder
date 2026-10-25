@@ -35,6 +35,7 @@ export class Editor {
   // Event callbacks for UI
   public onStateChanged?: () => void;
   public onToastMessage?: (msg: string, type?: 'info' | 'success' | 'warn') => void;
+  public onOpenHollowModal?: () => void;
 
   constructor(container: HTMLElement) {
     this.container = container;
@@ -409,6 +410,43 @@ export class Editor {
     this.toast(`Duplicated ${mesh.name}`, 'success');
   }
 
+  public hollowSelected(wallThickness = 0.25, combined = true): void {
+    const mesh = this.selectionManager.selectedMesh;
+    if (!mesh) {
+      this.toast('Select an object to make hollow', 'warn');
+      return;
+    }
+
+    const currentMat = mesh.surfaceMesh.material;
+    const isOutside = wallThickness < 0;
+    const absT = Math.abs(wallThickness);
+
+    if (combined) {
+      const hollowRoom = GeometryOperations.makeHollow(mesh, wallThickness);
+      hollowRoom.surfaceMesh.material = currentMat;
+      this.removeMesh(mesh, false);
+      this.addMesh(hollowRoom, false);
+      this.selectionManager.selectMesh(hollowRoom);
+      this.recordHistory(`Make Hollow (${absT}m ${isOutside ? 'Outside' : 'Inside'})`);
+      this.toast(`Created hollow room (${absT}m ${isOutside ? 'outside' : 'inside'})`, 'success');
+    } else {
+      const slabs = GeometryOperations.makeHollowSeparateSlabs(mesh, wallThickness);
+      this.removeMesh(mesh, false);
+      for (const slab of slabs) {
+        slab.surfaceMesh.material = currentMat;
+        this.addMesh(slab, false);
+      }
+      if (slabs.length > 0) {
+        this.selectionManager.selectMesh(slabs[0]);
+      }
+      this.recordHistory(`Make Hollow (6 Slabs, ${absT}m ${isOutside ? 'Outside' : 'Inside'})`);
+      this.toast(`Created 6 wall slabs (${absT}m ${isOutside ? 'outside' : 'inside'})`, 'success');
+    }
+
+    this.gizmoManager.updateGizmoAttachment();
+    this.notifyUI();
+  }
+
   // --- Material Application ---
 
   public applyMaterialToMesh(mesh: EditableMesh, materialId: string): void {
@@ -489,14 +527,14 @@ export class Editor {
 
   public exportOBJ(): void {
     const objData = ExportManager.exportToOBJ(this.meshes);
-    ExportManager.downloadFile('probuilder_level.obj', objData, 'text/plain');
+    ExportManager.downloadFile('voskel_level.obj', objData, 'text/plain');
     this.toast('Exported level to Wavefront .OBJ', 'success');
   }
 
   public async exportGLTF(): Promise<void> {
     try {
       const gltfData = await ExportManager.exportToGLTF(this.meshes, true);
-      ExportManager.downloadFile('probuilder_level.glb', gltfData as any, 'model/gltf-binary');
+      ExportManager.downloadFile('voskel_level.glb', gltfData as any, 'model/gltf-binary');
       this.toast('Exported level to glTF / GLB', 'success');
     } catch (e: any) {
       this.toast(`Export failed: ${e.message}`, 'warn');
@@ -510,8 +548,8 @@ export class Editor {
       meshes: this.meshes.map((m) => m.toJSON()),
     };
     const jsonStr = JSON.stringify(sceneData, null, 2);
-    ExportManager.downloadFile('probuilder_scene.json', jsonStr, 'application/json');
-    localStorage.setItem('pb_autosave', jsonStr);
+    ExportManager.downloadFile('voskel_scene.json', jsonStr, 'application/json');
+    localStorage.setItem('voskel_autosave', jsonStr);
     this.toast('Scene saved to JSON file & browser storage', 'success');
   }
 
@@ -694,6 +732,16 @@ export class Editor {
       if (e.ctrlKey && e.key.toLowerCase() === 'y') {
         e.preventDefault();
         this.redo();
+      }
+
+      // Make Hollow: Ctrl+H
+      if (e.ctrlKey && e.key.toLowerCase() === 'h') {
+        e.preventDefault();
+        if (this.onOpenHollowModal) {
+          this.onOpenHollowModal();
+        } else {
+          this.hollowSelected();
+        }
       }
 
       // Geometry Shortcuts: Shift+E (Extrude), Shift+I (Inset), Shift+B (Bevel)

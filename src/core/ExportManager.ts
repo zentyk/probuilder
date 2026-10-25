@@ -8,7 +8,7 @@ export class ExportManager {
    * Produces authentic polygonal OBJ format with world coordinates, UVs, and Normals.
    */
   public static exportToOBJ(meshes: EditableMesh[]): string {
-    let obj = `# ProBuilder WebGL Level Export\n`;
+    let obj = `# Voskel WebGL Level Export\n`;
     obj += `# Exported: ${new Date().toISOString()}\n\n`;
 
     let vertexOffset = 1;

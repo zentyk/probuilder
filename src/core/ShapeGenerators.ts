@@ -3,7 +3,7 @@ import { EditableMesh } from './EditableMesh';
 
 export class ShapeGenerators {
   /**
-   * Standard ProBuilder Cube (Quad-based, CCW winding order)
+   * Standard Voskel Cube (Quad-based, CCW winding order)
    */
   public static createCube(width = 2, height = 2, depth = 2): EditableMesh {
     const mesh = new EditableMesh('Cube');
@@ -80,41 +80,41 @@ export class ShapeGenerators {
       const t3 = mesh.addVertex(new THREE.Vector3(-hw, y1, z1));
       mesh.addFace([t0, t3, t2, t1]);
 
-      // Riser (vertical front face of step)
+      // Riser (vertical front face of step, facing -Z outwards)
       // v0: (-hw, y0, z0), v1: (hw, y0, z0), v2: (hw, y1, z0), v3: (-hw, y1, z0)
       const r0 = mesh.addVertex(new THREE.Vector3(-hw, y0, z0));
       const r1 = mesh.addVertex(new THREE.Vector3(hw, y0, z0));
       const r2 = mesh.addVertex(new THREE.Vector3(hw, y1, z0));
       const r3 = mesh.addVertex(new THREE.Vector3(-hw, y1, z0));
-      mesh.addFace([r0, r1, r2, r3]);
+      mesh.addFace([r0, r3, r2, r1]);
 
       if (hasSides) {
-        // Left side quad for this step segment down to y=0
+        // Left side quad for this step segment down to y=0 (facing -X)
         const ls0 = mesh.addVertex(new THREE.Vector3(-hw, 0, z0));
         const ls1 = mesh.addVertex(new THREE.Vector3(-hw, 0, z1));
         const ls2 = mesh.addVertex(new THREE.Vector3(-hw, y1, z1));
         const ls3 = mesh.addVertex(new THREE.Vector3(-hw, y1, z0));
         mesh.addFace([ls0, ls1, ls2, ls3]);
 
-        // Right side quad for this step segment down to y=0
+        // Right side quad for this step segment down to y=0 (facing +X)
         const rs0 = mesh.addVertex(new THREE.Vector3(hw, 0, z0));
-        const rs1 = mesh.addVertex(new THREE.Vector3(hw, y1, z0));
+        const rs1 = mesh.addVertex(new THREE.Vector3(hw, 0, z1));
         const rs2 = mesh.addVertex(new THREE.Vector3(hw, y1, z1));
-        const rs3 = mesh.addVertex(new THREE.Vector3(hw, 0, z1));
-        mesh.addFace([rs0, rs1, rs2, rs3]);
+        const rs3 = mesh.addVertex(new THREE.Vector3(hw, y1, z0));
+        mesh.addFace([rs0, rs3, rs2, rs1]);
       }
     }
 
     if (hasBack) {
-      // Back wall quad
+      // Back wall quad at z = depth (facing +Z outwards)
       const b0 = mesh.addVertex(new THREE.Vector3(-hw, 0, depth));
-      const b1 = mesh.addVertex(new THREE.Vector3(-hw, height, depth));
+      const b1 = mesh.addVertex(new THREE.Vector3(hw, 0, depth));
       const b2 = mesh.addVertex(new THREE.Vector3(hw, height, depth));
-      const b3 = mesh.addVertex(new THREE.Vector3(hw, 0, depth));
+      const b3 = mesh.addVertex(new THREE.Vector3(-hw, height, depth));
       mesh.addFace([b0, b1, b2, b3]);
     }
 
-    // Bottom base quad
+    // Bottom base quad at y = 0 (facing -Y)
     const bb0 = mesh.addVertex(new THREE.Vector3(-hw, 0, 0));
     const bb1 = mesh.addVertex(new THREE.Vector3(hw, 0, 0));
     const bb2 = mesh.addVertex(new THREE.Vector3(hw, 0, depth));
@@ -150,13 +150,13 @@ export class ShapeGenerators {
       const cos1 = Math.cos(a1);
       const sin1 = Math.sin(a1);
 
-      // 4 corners of tread top
+      // 4 corners of tread top (facing +Y upwards)
       // 0: inner a0, 1: outer a0, 2: outer a1, 3: inner a1
       const p0 = mesh.addVertex(new THREE.Vector3(innerRadius * cos0, y1, innerRadius * sin0));
       const p1 = mesh.addVertex(new THREE.Vector3(outerRadius * cos0, y1, outerRadius * sin0));
       const p2 = mesh.addVertex(new THREE.Vector3(outerRadius * cos1, y1, outerRadius * sin1));
       const p3 = mesh.addVertex(new THREE.Vector3(innerRadius * cos1, y1, innerRadius * sin1));
-      mesh.addFace([p0, p1, p2, p3]);
+      mesh.addFace([p0, p3, p2, p1]);
 
       // Step riser (front vertical face at a0)
       const r0 = mesh.addVertex(new THREE.Vector3(innerRadius * cos0, y0, innerRadius * sin0));
@@ -326,18 +326,18 @@ export class ShapeGenerators {
       const b0 = bottomIndices[i];
       const b1 = bottomIndices[next];
 
-      // Side quad
-      mesh.addFace([b0, b1, t1, t0]);
+      // Side quad (outwards)
+      mesh.addFace([b0, t0, t1, b1]);
     }
 
-    // Top cap (CCW)
+    // Top cap (+Y upwards)
     if (capTop) {
-      mesh.addFace([...topIndices]);
+      mesh.addFace([...topIndices].reverse());
     }
 
-    // Bottom cap (CW reversed to CCW when viewed from outside)
+    // Bottom cap (-Y downwards)
     if (capBottom) {
-      mesh.addFace([...bottomIndices].reverse());
+      mesh.addFace([...bottomIndices]);
     }
 
     mesh.group.position.y = hh;
