@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 
-export type SelectionMode = 'object' | 'vertex' | 'edge' | 'face';
+export type SelectionMode = 'object' | 'vertex' | 'edge' | 'face' | 'brush';
 export type TransformTool = 'translate' | 'rotate' | 'scale';
 export type TransformSpace = 'world' | 'local';
 
@@ -11,6 +11,9 @@ export interface Face {
   uvs?: THREE.Vector2[]; // Per-vertex UVs
   normal?: THREE.Vector3;
   cachedCenter?: THREE.Vector3;
+  textureShift?: { x: number; y: number };
+  textureScale?: { x: number; y: number };
+  textureRotation?: number; // In degrees
 }
 
 export interface EdgeKey {
@@ -86,4 +89,29 @@ export interface DevMaterialDef {
   label?: string;
   roughness: number;
   metalness: number;
+}
+
+export type EntityType = 'player_spawn' | 'light_point' | 'light_spot';
+
+export interface EntityProperties {
+  // Player Spawn properties
+  yaw?: number; // In degrees (0 to 360)
+
+  // Light properties
+  color?: string; // Hex color code, e.g. '#ffb366'
+  intensity?: number; // Light intensity (lumens/multiplier)
+  distance?: number; // Max attenuation range in meters
+  decay?: number; // Physical attenuation decay rate (default: 2)
+  angle?: number; // Spotlight cone angle in degrees (default: 45)
+  penumbra?: number; // Spotlight soft edge factor (0 to 1)
+  castShadow?: boolean;
+}
+
+export interface EntityData {
+  id: string;
+  name: string;
+  type: EntityType;
+  position: [number, number, number];
+  rotation: [number, number, number]; // Euler angles (radians)
+  properties: EntityProperties;
 }

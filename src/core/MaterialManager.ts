@@ -95,6 +95,21 @@ export class MaterialManager {
     return this.getMaterial(def.id);
   }
 
+  public getMaterialIndex(id: string): number {
+    const idx = this.materialDefs.findIndex((def) => def.id === id);
+    return idx >= 0 ? idx : 0;
+  }
+
+  public getMaterialIdByIndex(index: number): string {
+    const safeIdx = typeof index === 'number' && !isNaN(index) ? Math.max(0, Math.floor(index)) : 0;
+    const def = this.materialDefs[safeIdx % this.materialDefs.length];
+    return def ? def.id : 'dev_gray';
+  }
+
+  public getAllMaterials(): THREE.MeshStandardMaterial[] {
+    return this.materialDefs.map((def) => this.getMaterial(def.id));
+  }
+
   private initMaterials(): void {
     for (const def of this.materialDefs) {
       const texture = this.createGridTexture(def);
@@ -102,6 +117,7 @@ export class MaterialManager {
         map: texture,
         roughness: def.roughness,
         metalness: def.metalness,
+        side: THREE.DoubleSide,
       });
       this.materials.set(def.id, mat);
     }

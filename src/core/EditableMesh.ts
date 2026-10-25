@@ -1,6 +1,7 @@
 import * as THREE from 'three';
-import type { Face } from './types';
+import type { Face, SelectionMode } from './types';
 import { makeEdgeKey, parseEdgeKey } from './types';
+import { MaterialManager } from './MaterialManager';
 
 let meshCounter = 0;
 
@@ -58,15 +59,10 @@ export class EditableMesh {
     this.group.name = this.name;
     this.group.userData = { editableMesh: this };
 
-    // Surface mesh
+    // Surface mesh (multi-material array enabled)
     const surfaceGeom = new THREE.BufferGeometry();
-    const surfaceMat = new THREE.MeshStandardMaterial({
-      color: 0x8892b0,
-      roughness: 0.4,
-      metalness: 0.1,
-      side: THREE.FrontSide,
-    });
-    this.surfaceMesh = new THREE.Mesh(surfaceGeom, surfaceMat);
+    const surfaceMats = MaterialManager.getInstance().getAllMaterials();
+    this.surfaceMesh = new THREE.Mesh(surfaceGeom, surfaceMats);
     this.surfaceMesh.castShadow = true;
     this.surfaceMesh.receiveShadow = true;
     this.surfaceMesh.userData = { editableMesh: this, isSurface: true };
@@ -203,13 +199,14 @@ export class EditableMesh {
 
       const faceNormal = this.computeFaceNormal(face);
       const normalArr = [faceNormal.x, faceNormal.y, faceNormal.z];
+      const matIdx = typeof face.materialIndex === 'number' && !isNaN(face.materialIndex) ? face.materialIndex : 0;
 
       // Material grouping
-      if (face.materialIndex !== currentMaterial) {
+      if (matIdx !== currentMaterial) {
         if (groupCount > 0) {
           groups.push({ start: groupStart, count: groupCount, materialIndex: currentMaterial });
         }
-        currentMaterial = face.materialIndex;
+        currentMaterial = matIdx;
         groupStart = positions.length / 3;
         groupCount = 0;
       }
@@ -217,7 +214,7 @@ export class EditableMesh {
       // Fan triangulation: (0, 1, 2), (0, 2, 3), ...
       const v0Idx = face.vertexIndices[0];
       const v0 = this.vertices[v0Idx];
-      const v0UV = this.getAutoUV(v0, faceNormal);
+      const v0UV = this.getFaceVertexUV(face, v0, 0, faceNormal);
 
       for (let i = 1; i < face.vertexIndices.length - 1; i++) {
         const v1Idx = face.vertexIndices[i];
@@ -225,8 +222,8 @@ export class EditableMesh {
         const v1 = this.vertices[v1Idx];
         const v2 = this.vertices[v2Idx];
 
-        const v1UV = this.getAutoUV(v1, faceNormal);
-        const v2UV = this.getAutoUV(v2, faceNormal);
+        const v1UV = this.getFaceVertexUV(face, v1, i, faceNormal);
+        const v2UV = this.getFaceVertexUV(face, v2, i + 1, faceNormal);
 
         // Add 3 vertices
         positions.push(v0.x, v0.y, v0.z);
@@ -265,6 +262,7 @@ export class EditableMesh {
     newSurfaceGeom.computeBoundingBox();
     newSurfaceGeom.computeBoundingSphere();
     this.surfaceMesh.geometry = newSurfaceGeom;
+    this.surfaceMesh.material = MaterialManager.getInstance().getAllMaterials();
 
     // Update Wireframe Geometry
     this.rebuildWireframeGeometry();
@@ -312,10 +310,101 @@ export class EditableMesh {
   }
 
   /**
+   * Computes transformed UV coordinate for a vertex on a face,
+   * factoring in custom UVs, scale (tiling), rotation, and shift (panning).
+   */
+  public getFaceVertexUV(
+    face: Face,
+    v: THREE.Vector3,
+    vertIdxInFace: number,
+    normal: THREE.Vector3
+  ): THREE.Vector2 {
+    let u: number;
+    let vCoord: number;
+
+    if (face.uvs && face.uvs.length > vertIdxInFace) {
+      u = face.uvs[vertIdxInFace].x;
+      vCoord = face.uvs[vertIdxInFace].y;
+    } else {
+      const autoUV = this.getAutoUV(v, normal);
+      u = autoUV.x;
+      vCoord = autoUV.y;
+    }
+
+    // 1. Texture Scale (Tiling)
+    const scaleX = face.textureScale?.x !== undefined ? face.textureScale.x : 1.0;
+    const scaleY = face.textureScale?.y !== undefined ? face.textureScale.y : 1.0;
+    if (scaleX !== 0) u /= scaleX;
+    if (scaleY !== 0) vCoord /= scaleY;
+
+    // 2. Texture Rotation
+    const rotDeg = face.textureRotation || 0;
+    if (rotDeg !== 0) {
+      const rad = (rotDeg * Math.PI) / 180;
+      const cos = Math.cos(rad);
+      const sin = Math.sin(rad);
+      const ru = u * cos - vCoord * sin;
+      const rv = u * sin + vCoord * cos;
+      u = ru;
+      vCoord = rv;
+    }
+
+    // 3. Texture Shift (Panning)
+    const shiftX = face.textureShift?.x || 0;
+    const shiftY = face.textureShift?.y || 0;
+    u += shiftX;
+    vCoord += shiftY;
+
+    return new THREE.Vector2(u, vCoord);
+  }
+
+  /**
+   * Fits texture 1x1 across face bounding dimensions (Hammer-style Fit)
+   */
+  public fitFaceUV(face: Face): void {
+    if (face.vertexIndices.length < 3) return;
+    const normal = face.normal || this.computeFaceNormal(face);
+    const uvs: THREE.Vector2[] = [];
+
+    let minU = Infinity, maxU = -Infinity;
+    let minV = Infinity, maxV = -Infinity;
+
+    for (const vIdx of face.vertexIndices) {
+      const v = this.vertices[vIdx];
+      const autoUV = this.getAutoUV(v, normal);
+      uvs.push(autoUV);
+      if (autoUV.x < minU) minU = autoUV.x;
+      if (autoUV.x > maxU) maxU = autoUV.x;
+      if (autoUV.y < minV) minV = autoUV.y;
+      if (autoUV.y > maxV) maxV = autoUV.y;
+    }
+
+    const spanU = maxU - minU > 0.0001 ? maxU - minU : 1.0;
+    const spanV = maxV - minV > 0.0001 ? maxV - minV : 1.0;
+
+    face.uvs = uvs.map((u) => new THREE.Vector2((u.x - minU) / spanU, (u.y - minV) / spanV));
+    face.textureShift = { x: 0, y: 0 };
+    face.textureScale = { x: 1, y: 1 };
+    face.textureRotation = 0;
+    this.rebuildGeometry();
+  }
+
+  /**
+   * Resets face UV to world planar projection
+   */
+  public planarFaceUV(face: Face): void {
+    delete face.uvs;
+    face.textureShift = { x: 0, y: 0 };
+    face.textureScale = { x: 1, y: 1 };
+    face.textureRotation = 0;
+    this.rebuildGeometry();
+  }
+
+  /**
    * Updates visual highlights for selected/hovered elements (faces, edges, vertices)
    */
   public updateSelectionVisuals(
-    mode: 'object' | 'vertex' | 'edge' | 'face',
+    mode: SelectionMode,
     selectedVertices: Set<number>,
     selectedEdges: Set<string>,
     selectedFaces: Set<number>,
@@ -426,6 +515,9 @@ export class EditableMesh {
       materialIndex: f.materialIndex,
       uvs: f.uvs ? f.uvs.map((u) => u.clone()) : undefined,
       normal: f.normal ? f.normal.clone() : undefined,
+      textureShift: f.textureShift ? { ...f.textureShift } : undefined,
+      textureScale: f.textureScale ? { ...f.textureScale } : undefined,
+      textureRotation: f.textureRotation,
     }));
     cloned.nextFaceId = this.nextFaceId;
     cloned.group.position.copy(this.group.position);

@@ -1,9 +1,11 @@
+import * as THREE from 'three';
 import { Editor } from '../core/Editor';
 import type { SelectionMode, ShapeType, TransformTool } from '../core/types';
 
 export class UIManager {
   private editor: Editor | null = null;
   private container: HTMLElement;
+  private textureEventsBound = false;
 
   constructor(container: HTMLElement, editor?: Editor | null) {
     this.container = container;
@@ -72,6 +74,15 @@ export class UIManager {
               </svg>
               <span>Face</span>
               <span class="pb-key">4</span>
+            </button>
+            <button class="pb-btn pb-mode-btn" data-mode="brush" id="pb-mode-brush-btn" title="Drag-to-Create Brush Tool (B)">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M12 2L2 7l10 5 10-5-10-5z"></path>
+                <path d="M2 17l10 5 10-5"></path>
+                <path d="M2 12l10 5 10-5"></path>
+              </svg>
+              <span>Brush</span>
+              <span class="pb-key">B</span>
             </button>
           </div>
 
@@ -196,6 +207,37 @@ export class UIManager {
         <div class="pb-main-workspace">
           <!-- Left Tool Shelf -->
           <aside class="pb-toolshelf">
+            <!-- Brush Tool Section (TrenchBroom / Hammer style) -->
+            <div class="pb-shelf-section">
+              <div class="pb-section-header">
+                <span class="pb-section-title">BRUSH TOOL</span>
+                <span class="pb-section-badge">TrenchBroom</span>
+              </div>
+              <button id="pb-tool-drag-brush" class="pb-brush-hero-btn" title="Click & Drag to Create Brush on Grid (B)">
+                <div class="pb-brush-icon-wrapper">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M12 2L2 7l10 5 10-5-10-5z"></path>
+                    <path d="M2 17l10 5 10-5"></path>
+                    <path d="M2 12l10 5 10-5"></path>
+                  </svg>
+                </div>
+                <div class="pb-brush-hero-text">
+                  <span class="pb-brush-hero-title">Drag Brush</span>
+                  <span class="pb-brush-hero-desc">Click &amp; drag on floor grid</span>
+                </div>
+                <span class="pb-key">B</span>
+              </button>
+              <div class="pb-brush-controls">
+                <div class="pb-brush-height-row">
+                  <label for="pb-brush-default-height">Default Height:</label>
+                  <div class="pb-input-stepper pb-input-stepper-sm">
+                    <input type="number" id="pb-brush-default-height" value="2.0" step="0.25" min="0.1" max="50" class="pb-text-input pb-text-input-sm" />
+                    <span class="pb-unit">m</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
             <!-- Shape Generator Section -->
             <div class="pb-shelf-section">
               <div class="pb-section-header">
@@ -298,6 +340,15 @@ export class UIManager {
                   </svg>
                   <span class="pb-action-name">Flip Normals</span>
                 </button>
+                <button id="pb-tool-texture-inspector" class="pb-action-btn pb-btn-accent-glow" title="Surface Inspector / Texture Alignment &amp; Eyedropper (Shift+A)">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="6" cy="6" r="3"></circle>
+                    <path d="M14 4l6 6M4 14l6 6M13.5 6.5l4 4M7.5 12.5l4 4"></path>
+                    <path d="M2 22l5-5"></path>
+                  </svg>
+                  <span class="pb-action-name">Surface Inspector</span>
+                  <span class="pb-key">Shift+A</span>
+                </button>
               </div>
             </div>
 
@@ -337,6 +388,14 @@ export class UIManager {
                 <span class="pb-section-title">OBJECT TOOLS</span>
               </div>
               <div class="pb-tool-list">
+                <button id="pb-tool-hollow" class="pb-action-btn pb-btn-accent-glow" title="Make Hollow Room (Ctrl+H) - TrenchBroom / Hammer style">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                    <rect x="7" y="7" width="10" height="10" stroke-dasharray="2 2"></rect>
+                  </svg>
+                  <span class="pb-action-name">Make Hollow</span>
+                  <span class="pb-key">Ctrl+H</span>
+                </button>
                 <button id="pb-tool-duplicate" class="pb-action-btn" title="Duplicate Selected Object">
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
@@ -498,6 +557,257 @@ export class UIManager {
           </aside>
         </div>
 
+        <!-- Make Hollow Modal Dialog (TrenchBroom / Hammer style) -->
+        <div id="pb-hollow-modal" class="pb-modal-backdrop" style="display: none;">
+          <div class="pb-modal-card">
+            <div class="pb-modal-header">
+              <div class="pb-modal-title-group">
+                <div class="pb-modal-icon">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                    <rect x="7" y="7" width="10" height="10" stroke-dasharray="2 2"></rect>
+                  </svg>
+                </div>
+                <div>
+                  <h3 class="pb-modal-title">Make Hollow Room</h3>
+                  <p class="pb-modal-subtitle">TrenchBroom &amp; Valve Hammer Editor Brush Hollower</p>
+                </div>
+              </div>
+              <button id="pb-modal-close" class="pb-modal-close-btn" title="Close (Esc)">✕</button>
+            </div>
+
+            <div class="pb-modal-body">
+              <!-- Target object info -->
+              <div class="pb-modal-info-box" id="pb-hollow-target-info">
+                Target: <strong>Cube_1</strong> &bull; Size: 2.00m &times; 2.00m &times; 2.00m
+              </div>
+
+              <!-- Wall Thickness -->
+              <div class="pb-modal-field">
+                <div class="pb-field-header">
+                  <label for="pb-hollow-thickness">Wall Thickness</label>
+                  <span class="pb-field-hint" id="pb-hollow-thickness-display">0.25m</span>
+                </div>
+                <div class="pb-input-stepper">
+                  <input type="number" id="pb-hollow-thickness" value="0.25" min="0.02" max="10" step="0.05" class="pb-text-input" />
+                  <span class="pb-unit">m</span>
+                </div>
+                <div class="pb-preset-chips">
+                  <button type="button" class="pb-chip" data-thickness="0.10">0.10m (Thin)</button>
+                  <button type="button" class="pb-chip active" data-thickness="0.25">0.25m (Standard)</button>
+                  <button type="button" class="pb-chip" data-thickness="0.50">0.50m (Thick)</button>
+                  <button type="button" class="pb-chip" data-thickness="1.00">1.00m (Bunker)</button>
+                </div>
+              </div>
+
+              <!-- Direction: Inside vs Outside -->
+              <div class="pb-modal-field">
+                <label>Hollow Direction</label>
+                <div class="pb-toggle-options">
+                  <div class="pb-toggle-card active" id="pb-opt-inside">
+                    <input type="radio" name="hollow-dir" value="inside" checked />
+                    <div class="pb-option-content">
+                      <span class="pb-option-title">Inside Hollow (Default)</span>
+                      <span class="pb-option-desc">Carves room inside current outer bounds.</span>
+                    </div>
+                  </div>
+                  <div class="pb-toggle-card" id="pb-opt-outside">
+                    <input type="radio" name="hollow-dir" value="outside" />
+                    <div class="pb-option-content">
+                      <span class="pb-option-title">Outside Hollow</span>
+                      <span class="pb-option-desc">Wraps walls outside, preserving interior walkable space.</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Slabs or Combined Mesh -->
+              <div class="pb-modal-field">
+                <label>Output Mesh Structure</label>
+                <div class="pb-toggle-options">
+                  <div class="pb-toggle-card active" id="pb-opt-slabs">
+                    <input type="radio" name="hollow-structure" value="slabs" checked />
+                    <div class="pb-option-content">
+                      <span class="pb-option-title">6 Separate Slabs (TrenchBroom / Hammer)</span>
+                      <span class="pb-option-desc">Creates 6 watertight solids (Floor, Ceiling, 4 Walls) with centered pivots.</span>
+                    </div>
+                  </div>
+                  <div class="pb-toggle-card" id="pb-opt-combined">
+                    <input type="radio" name="hollow-structure" value="combined" />
+                    <div class="pb-option-content">
+                      <span class="pb-option-title">Single Room Mesh</span>
+                      <span class="pb-option-desc">Merges all 6 slabs into one combined editable mesh.</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="pb-modal-footer">
+              <button id="pb-hollow-cancel" class="pb-btn pb-btn-secondary">Cancel</button>
+              <button id="pb-hollow-confirm" class="pb-btn pb-btn-accent">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <polyline points="20 6 9 17 4 12"></polyline>
+                </svg>
+                <span>Make Hollow</span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Floating Surface Inspector / Texture Alignment Dialog (Hammer Shift+A) -->
+        <div id="pb-texture-panel" class="pb-texture-panel" style="display: none;">
+          <div class="pb-tex-header">
+            <div class="pb-tex-title-group">
+              <div class="pb-tex-header-icon">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <circle cx="6" cy="6" r="3"></circle>
+                  <path d="M14 4l6 6M4 14l6 6M13.5 6.5l4 4M7.5 12.5l4 4"></path>
+                  <path d="M2 22l5-5"></path>
+                </svg>
+              </div>
+              <div class="pb-tex-header-text">
+                <span class="pb-tex-title">Surface Inspector</span>
+                <span class="pb-tex-badge">Shift+A</span>
+              </div>
+            </div>
+            <button id="pb-tex-close" class="pb-modal-close-btn" title="Close (Shift+A / Esc)">✕</button>
+          </div>
+
+          <div class="pb-tex-body">
+            <!-- Mode Guidance Banner -->
+            <div class="pb-tex-guide-banner">
+              <span><strong>L-Click:</strong> Eyedropper</span>
+              <span class="pb-guide-dot">&bull;</span>
+              <span><strong>R-Click:</strong> Paint Face</span>
+            </div>
+
+            <!-- Target Face Info -->
+            <div class="pb-tex-target-card" id="pb-tex-target-info">
+              Target: <em>No face selected (L-Click to pick)</em>
+            </div>
+
+            <!-- Active Material Selection -->
+            <div class="pb-tex-section">
+              <div class="pb-tex-section-title">ACTIVE MATERIAL</div>
+              <div class="pb-tex-palette-grid">
+                <div class="pb-tex-chip active" data-mat="dev_orange">
+                  <div class="pb-tex-swatch" style="background: #e66b1a;"></div>
+                  <span>Orange</span>
+                </div>
+                <div class="pb-tex-chip" data-mat="dev_gray">
+                  <div class="pb-tex-swatch" style="background: #717887;"></div>
+                  <span>Neutral</span>
+                </div>
+                <div class="pb-tex-chip" data-mat="dev_dark">
+                  <div class="pb-tex-swatch" style="background: #2b2e38;"></div>
+                  <span>Dark</span>
+                </div>
+                <div class="pb-tex-chip" data-mat="dev_blue">
+                  <div class="pb-tex-swatch" style="background: #1e88e5;"></div>
+                  <span>Cyan</span>
+                </div>
+                <div class="pb-tex-chip" data-mat="dev_hazard">
+                  <div class="pb-tex-swatch" style="background: #f1c40f;"></div>
+                  <span>Hazard</span>
+                </div>
+                <div class="pb-tex-chip" data-mat="dev_concrete">
+                  <div class="pb-tex-swatch" style="background: #b0b5be;"></div>
+                  <span>Concrete</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Texture Shift (Pan) -->
+            <div class="pb-tex-section">
+              <div class="pb-tex-section-title">SHIFT (PAN)</div>
+              <div class="pb-tex-row">
+                <label>X:</label>
+                <button type="button" class="pb-nudge-btn" id="pb-shift-x-minus">-0.25</button>
+                <input type="number" id="pb-tex-shift-x" value="0.00" step="0.25" class="pb-tex-input" />
+                <button type="button" class="pb-nudge-btn" id="pb-shift-x-plus">+0.25</button>
+              </div>
+              <div class="pb-tex-row">
+                <label>Y:</label>
+                <button type="button" class="pb-nudge-btn" id="pb-shift-y-minus">-0.25</button>
+                <input type="number" id="pb-tex-shift-y" value="0.00" step="0.25" class="pb-tex-input" />
+                <button type="button" class="pb-nudge-btn" id="pb-shift-y-plus">+0.25</button>
+              </div>
+            </div>
+
+            <!-- Texture Scale (Tiling) -->
+            <div class="pb-tex-section">
+              <div class="pb-tex-section-title">SCALE (TILING)</div>
+              <div class="pb-tex-row">
+                <label>X:</label>
+                <input type="number" id="pb-tex-scale-x" value="1.00" step="0.25" class="pb-tex-input" />
+                <button type="button" class="pb-nudge-btn" id="pb-tex-flip-x" title="Invert / Flip X">Flip X</button>
+              </div>
+              <div class="pb-tex-row">
+                <label>Y:</label>
+                <input type="number" id="pb-tex-scale-y" value="1.00" step="0.25" class="pb-tex-input" />
+                <button type="button" class="pb-nudge-btn" id="pb-tex-flip-y" title="Invert / Flip Y">Flip Y</button>
+              </div>
+              <div class="pb-preset-chips pb-tex-presets">
+                <button type="button" class="pb-chip" data-scale="0.25">0.25x</button>
+                <button type="button" class="pb-chip" data-scale="0.5">0.5x</button>
+                <button type="button" class="pb-chip active" data-scale="1.0">1.0x</button>
+                <button type="button" class="pb-chip" data-scale="2.0">2.0x</button>
+                <button type="button" class="pb-chip" data-scale="4.0">4.0x</button>
+              </div>
+            </div>
+
+            <!-- Texture Rotation -->
+            <div class="pb-tex-section">
+              <div class="pb-tex-section-title">ROTATION</div>
+              <div class="pb-tex-row">
+                <input type="range" id="pb-tex-rot-range" min="0" max="360" value="0" step="1" class="pb-tex-slider" />
+                <input type="number" id="pb-tex-rot-input" min="0" max="360" value="0" class="pb-tex-input pb-tex-rot-input" />
+                <span class="pb-unit">°</span>
+              </div>
+              <div class="pb-preset-chips pb-tex-presets">
+                <button type="button" class="pb-chip active" data-rot="0">0°</button>
+                <button type="button" class="pb-chip" data-rot="90">90°</button>
+                <button type="button" class="pb-chip" data-rot="180">180°</button>
+                <button type="button" class="pb-chip" data-rot="270">270°</button>
+              </div>
+            </div>
+
+            <!-- Quick Alignment Actions -->
+            <div class="pb-tex-actions-grid">
+              <button id="pb-tex-btn-fit" class="pb-btn pb-btn-sm pb-btn-accent" title="Fit texture 1x1 across face (Hammer Fit)">
+                Fit Face
+              </button>
+              <button id="pb-tex-btn-planar" class="pb-btn pb-btn-sm" title="Reset to standard world planar projection">
+                Auto Planar
+              </button>
+              <button id="pb-tex-btn-reset" class="pb-btn pb-btn-sm" title="Reset Shift, Scale, and Rotation">
+                Reset UVs
+              </button>
+            </div>
+
+            <!-- Apply Buttons -->
+            <div class="pb-tex-apply-row">
+              <button id="pb-tex-btn-apply-sel" class="pb-btn pb-btn-sm pb-btn-accent" title="Apply active material &amp; UV alignment to selected faces">
+                Apply to Selection
+              </button>
+              <button id="pb-tex-btn-apply-obj" class="pb-btn pb-btn-sm pb-btn-secondary" title="Apply to all faces of current mesh">
+                Apply to Object
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Floating Brush Dimension HUD (TrenchBroom / Hammer style) -->
+        <div id="pb-brush-hud" class="pb-brush-hud" style="display: none;">
+          <div class="pb-hud-dims">
+            <span class="pb-hud-item"><span class="pb-hud-dim-label">W</span> <span id="pb-hud-w">0.00</span>m</span>
+            <span class="pb-hud-item"><span class="pb-hud-dim-label">H</span> <span id="pb-hud-h">2.00</span>m</span>
+            <span class="pb-hud-item"><span class="pb-hud-dim-label">D</span> <span id="pb-hud-d">0.00</span>m</span>
+          </div>
+          <div class="pb-hud-sub" id="pb-hud-sub">Scroll ↕ Height &bull; Shift: Square</div>
+        </div>
+
         <!-- Toast Notifications Container -->
         <div id="pb-toast-container" class="pb-toast-container"></div>
       </div>
@@ -597,6 +907,10 @@ export class UIManager {
     this.container.querySelector('#pb-tool-bevel')!.addEventListener('click', () => this.editor?.bevelSelected());
     this.container.querySelector('#pb-tool-subdivide')!.addEventListener('click', () => this.editor?.subdivideSelected());
     this.container.querySelector('#pb-tool-flip')!.addEventListener('click', () => this.editor?.flipNormalsSelected());
+    this.container.querySelector('#pb-tool-texture-inspector')!.addEventListener('click', () => this.editor?.textureTool.toggle());
+
+    // Setup Surface Inspector Events
+    this.setupTexturePanelEvents();
 
     // Element Tools
     this.container.querySelector('#pb-tool-merge')!.addEventListener('click', () => this.editor?.mergeSelectedVertices());
@@ -604,9 +918,32 @@ export class UIManager {
     this.container.querySelector('#pb-tool-invert-select')!.addEventListener('click', () => this.editor?.selectionManager.invertSelection());
 
     // Object Tools
+    this.container.querySelector('#pb-tool-hollow')!.addEventListener('click', () => this.openHollowModal());
     this.container.querySelector('#pb-tool-duplicate')!.addEventListener('click', () => this.editor?.duplicateSelected());
     this.container.querySelector('#pb-tool-center-pivot')!.addEventListener('click', () => this.editor?.centerPivotSelected());
     this.container.querySelector('#pb-tool-delete')!.addEventListener('click', () => this.editor?.deleteSelected());
+
+    // Brush Tool Hero Button & Height Input
+    this.container.querySelector('#pb-tool-drag-brush')!.addEventListener('click', () => {
+      if (!this.editor) return;
+      if (this.editor.selectionManager.mode === 'brush') {
+        this.editor.setSelectionMode('object');
+      } else {
+        this.editor.setSelectionMode('brush');
+      }
+    });
+
+    const brushHeightInput = this.container.querySelector('#pb-brush-default-height') as HTMLInputElement;
+    brushHeightInput.addEventListener('change', () => {
+      if (!this.editor) return;
+      const val = parseFloat(brushHeightInput.value);
+      if (!isNaN(val) && val > 0) {
+        this.editor.brushTool.setBrushHeight(val);
+      }
+    });
+
+    // Hollow Modal Event Bindings
+    this.setupHollowModalEvents();
 
     // Material Chips
     const matChips = this.container.querySelectorAll('.pb-mat-chip');
@@ -662,6 +999,104 @@ export class UIManager {
 
     this.editor.onToastMessage = (msg, type = 'info') => {
       this.showToast(msg, type);
+    };
+
+    this.editor.onOpenHollowModal = () => {
+      this.openHollowModal();
+    };
+
+    this.setupTexturePanelEvents();
+
+    // Brush Tool Dimension HUD Callback
+    const hud = this.container.querySelector('#pb-brush-hud') as HTMLElement;
+    const hudW = this.container.querySelector('#pb-hud-w')!;
+    const hudH = this.container.querySelector('#pb-hud-h')!;
+    const hudD = this.container.querySelector('#pb-hud-d')!;
+    const hudSub = this.container.querySelector('#pb-hud-sub')!;
+
+    this.editor.brushTool.onDimensionsChanged = (dims, screenPos) => {
+      if (!this.editor) return;
+      if (!this.editor.brushTool.isActive) {
+        hud.style.display = 'none';
+        return;
+      }
+
+      if (screenPos) {
+        hud.style.left = `${screenPos.x + 18}px`;
+        hud.style.top = `${screenPos.y + 18}px`;
+      }
+
+      if (dims) {
+        hud.style.display = 'flex';
+        hudW.textContent = dims.width.toFixed(2);
+        hudH.textContent = dims.height.toFixed(2);
+        hudD.textContent = dims.depth.toFixed(2);
+        hudSub.textContent = dims.isSquare
+          ? 'Locked Square (Shift) • Scroll ↕ Height'
+          : 'Scroll ↕ Height • Shift: Square';
+      } else {
+        hud.style.display = 'none';
+      }
+    };
+
+    // Surface Inspector Hooks
+    const texPanel = this.container.querySelector('#pb-texture-panel') as HTMLElement;
+    const texTargetInfo = this.container.querySelector('#pb-tex-target-info')!;
+    const texShiftX = this.container.querySelector('#pb-tex-shift-x') as HTMLInputElement;
+    const texShiftY = this.container.querySelector('#pb-tex-shift-y') as HTMLInputElement;
+    const texScaleX = this.container.querySelector('#pb-tex-scale-x') as HTMLInputElement;
+    const texScaleY = this.container.querySelector('#pb-tex-scale-y') as HTMLInputElement;
+    const texRotRange = this.container.querySelector('#pb-tex-rot-range') as HTMLInputElement;
+    const texRotInput = this.container.querySelector('#pb-tex-rot-input') as HTMLInputElement;
+    const texChips = this.container.querySelectorAll('.pb-tex-chip');
+    const texScaleChips = this.container.querySelectorAll('.pb-tex-presets [data-scale]');
+    const texRotChips = this.container.querySelectorAll('.pb-tex-presets [data-rot]');
+
+    this.editor.textureTool.onPanelVisibilityChanged = (visible) => {
+      texPanel.style.display = visible ? 'flex' : 'none';
+      texPanel.classList.toggle('open', visible);
+      const inspectorBtn = this.container.querySelector('#pb-tool-texture-inspector');
+      if (inspectorBtn) inspectorBtn.classList.toggle('active', visible);
+    };
+
+    this.editor.textureTool.onStateChanged = (state) => {
+      if (state.meshName && state.faceId !== null) {
+        texTargetInfo.innerHTML = `Target: <strong>${state.meshName}</strong> &bull; Face: <code>#${state.faceId}</code>`;
+      } else if (state.meshName) {
+        texTargetInfo.innerHTML = `Target: <strong>${state.meshName}</strong> &bull; <em>Select a face</em>`;
+      } else {
+        texTargetInfo.innerHTML = `Target: <em>No face selected (L-Click to pick)</em>`;
+      }
+
+      // Material chips
+      texChips.forEach((chip) => {
+        chip.classList.toggle('active', chip.getAttribute('data-mat') === state.materialId);
+      });
+
+      // Shift inputs
+      if (document.activeElement !== texShiftX) texShiftX.value = state.shiftX.toFixed(2);
+      if (document.activeElement !== texShiftY) texShiftY.value = state.shiftY.toFixed(2);
+
+      // Scale inputs
+      if (document.activeElement !== texScaleX) texScaleX.value = state.scaleX.toFixed(2);
+      if (document.activeElement !== texScaleY) texScaleY.value = state.scaleY.toFixed(2);
+
+      texScaleChips.forEach((chip) => {
+        const val = parseFloat(chip.getAttribute('data-scale') || '-999');
+        chip.classList.toggle(
+          'active',
+          Math.abs(val - state.scaleX) < 0.01 && Math.abs(val - state.scaleY) < 0.01
+        );
+      });
+
+      // Rotation inputs
+      if (document.activeElement !== texRotRange) texRotRange.value = state.rotation.toString();
+      if (document.activeElement !== texRotInput) texRotInput.value = state.rotation.toString();
+
+      texRotChips.forEach((chip) => {
+        const val = parseInt(chip.getAttribute('data-rot') || '-999', 10);
+        chip.classList.toggle('active', val === state.rotation);
+      });
     };
   }
 
@@ -758,11 +1193,27 @@ export class UIManager {
     const statusInfo = this.container.querySelector('#pb-status-info')!;
     if (isPlaytest) {
       statusInfo.textContent = 'Playtesting level (FPS controller active)';
+    } else if (mode === 'brush') {
+      statusInfo.textContent = 'Brush Tool: Click & drag on floor grid (Shift: Square, Scroll: Height, Esc: Exit)';
     } else if (mesh) {
       statusInfo.textContent = `${mesh.name} (${mode.toUpperCase()} Mode) — ${selectedCount} ${selectedLabel}`;
     } else {
       statusInfo.textContent = 'Ready — Click on any mesh to select';
     }
+
+    // Brush Hero Button & Height Input Sync
+    const isBrush = mode === 'brush';
+    const heroBtn = this.container.querySelector('#pb-tool-drag-brush');
+    if (heroBtn) heroBtn.classList.toggle('active', isBrush);
+    const brushHeightInput = this.container.querySelector('#pb-brush-default-height') as HTMLInputElement;
+    if (brushHeightInput && !document.activeElement?.isSameNode(brushHeightInput)) {
+      brushHeightInput.value = this.editor.brushTool.brushHeight.toFixed(2);
+    }
+
+    // Surface Inspector Button Sync
+    const isTexActive = !!this.editor.textureTool?.isActive;
+    const texBtn = this.container.querySelector('#pb-tool-texture-inspector');
+    if (texBtn) texBtn.classList.toggle('active', isTexActive);
 
     // Grid snap footer
     const coordsInfo = this.container.querySelector('#pb-coords-info')!;
@@ -788,6 +1239,7 @@ export class UIManager {
         <span class="pb-item-faces">${mesh.faces.length}f</span>
       `;
       item.addEventListener('click', () => {
+        if (!this.editor) return;
         this.editor.selectionManager.selectMesh(mesh);
         this.editor.gizmoManager.updateGizmoAttachment();
         this.updateUI();
@@ -811,5 +1263,247 @@ export class UIManager {
       toast.classList.remove('show');
       setTimeout(() => toast.remove(), 300);
     }, 2800);
+  }
+
+  // --- Make Hollow Modal Logic ---
+
+  private setupHollowModalEvents(): void {
+    const modal = this.container.querySelector('#pb-hollow-modal') as HTMLElement;
+    const closeBtn = this.container.querySelector('#pb-modal-close')!;
+    const cancelBtn = this.container.querySelector('#pb-hollow-cancel')!;
+    const confirmBtn = this.container.querySelector('#pb-hollow-confirm')!;
+    const thicknessInput = this.container.querySelector('#pb-hollow-thickness') as HTMLInputElement;
+    const thicknessHint = this.container.querySelector('#pb-hollow-thickness-display') as HTMLElement;
+    const presetChips = this.container.querySelectorAll('.pb-preset-chips .pb-chip');
+
+    const dirInside = this.container.querySelector('#pb-opt-inside') as HTMLElement;
+    const dirOutside = this.container.querySelector('#pb-opt-outside') as HTMLElement;
+    const dirInsideRadio = dirInside.querySelector('input') as HTMLInputElement;
+    const dirOutsideRadio = dirOutside.querySelector('input') as HTMLInputElement;
+
+    const structSlabs = this.container.querySelector('#pb-opt-slabs') as HTMLElement;
+    const structCombined = this.container.querySelector('#pb-opt-combined') as HTMLElement;
+    const structSlabsRadio = structSlabs.querySelector('input') as HTMLInputElement;
+    const structCombinedRadio = structCombined.querySelector('input') as HTMLInputElement;
+
+    // Close actions
+    closeBtn.addEventListener('click', () => this.closeHollowModal());
+    cancelBtn.addEventListener('click', () => this.closeHollowModal());
+    modal.addEventListener('click', (e) => {
+      if (e.target === modal) this.closeHollowModal();
+    });
+
+    // Thickness input & presets
+    const updateThicknessDisplay = () => {
+      const val = parseFloat(thicknessInput.value) || 0.25;
+      if (thicknessHint) thicknessHint.textContent = `${val.toFixed(2)}m`;
+      presetChips.forEach((chip) => {
+        const chipVal = parseFloat(chip.getAttribute('data-thickness') || '0');
+        chip.classList.toggle('active', Math.abs(chipVal - val) < 0.001);
+      });
+    };
+
+    thicknessInput.addEventListener('input', updateThicknessDisplay);
+
+    presetChips.forEach((chip) => {
+      chip.addEventListener('click', () => {
+        const val = chip.getAttribute('data-thickness')!;
+        thicknessInput.value = val;
+        updateThicknessDisplay();
+      });
+    });
+
+    // Direction toggles
+    dirInside.addEventListener('click', () => {
+      dirInsideRadio.checked = true;
+      dirInside.classList.add('active');
+      dirOutside.classList.remove('active');
+    });
+
+    dirOutside.addEventListener('click', () => {
+      dirOutsideRadio.checked = true;
+      dirOutside.classList.add('active');
+      dirInside.classList.remove('active');
+    });
+
+    // Structure toggles
+    structSlabs.addEventListener('click', () => {
+      structSlabsRadio.checked = true;
+      structSlabs.classList.add('active');
+      structCombined.classList.remove('active');
+    });
+
+    structCombined.addEventListener('click', () => {
+      structCombinedRadio.checked = true;
+      structCombined.classList.add('active');
+      structSlabs.classList.remove('active');
+    });
+
+    // Execute Hollow confirm
+    const executeHollow = () => {
+      if (!this.editor) return;
+      const rawThickness = Math.max(0.01, parseFloat(thicknessInput.value) || 0.25);
+      const isOutside = dirOutsideRadio.checked;
+      const finalThickness = isOutside ? -rawThickness : rawThickness;
+      const combined = structCombinedRadio.checked;
+
+      this.closeHollowModal();
+      this.editor.hollowSelected(finalThickness, combined);
+    };
+
+    confirmBtn.addEventListener('click', executeHollow);
+
+    // Escape and Enter keys inside modal
+    window.addEventListener('keydown', (e) => {
+      if (modal.classList.contains('open')) {
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          this.closeHollowModal();
+        } else if (e.key === 'Enter') {
+          e.preventDefault();
+          executeHollow();
+        }
+      }
+    });
+  }
+
+  public openHollowModal(): void {
+    if (!this.editor) return;
+    const mesh = this.editor.selectionManager.selectedMesh;
+    if (!mesh) {
+      this.showToast('Select an object to make hollow', 'warn');
+      return;
+    }
+
+    const modal = this.container.querySelector('#pb-hollow-modal') as HTMLElement;
+    const infoBox = this.container.querySelector('#pb-hollow-target-info') as HTMLElement;
+    if (!modal || !infoBox) return;
+
+    // Compute bounding dimensions
+    const bbox = new THREE.Box3();
+    for (const v of mesh.vertices) {
+      bbox.expandByPoint(v);
+    }
+    const width = ((bbox.max.x - bbox.min.x) * mesh.group.scale.x).toFixed(2);
+    const height = ((bbox.max.y - bbox.min.y) * mesh.group.scale.y).toFixed(2);
+    const depth = ((bbox.max.z - bbox.min.z) * mesh.group.scale.z).toFixed(2);
+
+    infoBox.innerHTML = `Target: <strong>${mesh.name}</strong> &bull; Size: <code>${width}m &times; ${height}m &times; ${depth}m</code>`;
+
+    modal.style.display = 'flex';
+    requestAnimationFrame(() => {
+      modal.classList.add('open');
+      const thicknessInput = this.container.querySelector('#pb-hollow-thickness') as HTMLInputElement;
+      thicknessInput?.focus();
+      thicknessInput?.select();
+    });
+  }
+
+  public closeHollowModal(): void {
+    const modal = this.container.querySelector('#pb-hollow-modal') as HTMLElement;
+    if (!modal) return;
+    modal.classList.remove('open');
+    setTimeout(() => {
+      if (!modal.classList.contains('open')) {
+        modal.style.display = 'none';
+      }
+    }, 200);
+  }
+
+  // --- Surface Inspector (Hammer Shift+A) Events ---
+
+  private setupTexturePanelEvents(): void {
+    if (this.textureEventsBound) return;
+    this.textureEventsBound = true;
+
+    const closeBtn = this.container.querySelector('#pb-tex-close');
+    closeBtn?.addEventListener('click', () => this.editor?.textureTool.deactivate());
+
+    // Material Chips
+    const texChips = this.container.querySelectorAll('.pb-tex-chip');
+    texChips.forEach((chip) => {
+      chip.addEventListener('click', () => {
+        const matId = chip.getAttribute('data-mat');
+        if (matId && this.editor) {
+          this.editor.textureTool.setMaterial(matId);
+        }
+      });
+    });
+
+    // Shift Nudge buttons
+    this.container.querySelector('#pb-shift-x-minus')?.addEventListener('click', () => this.editor?.textureTool.nudgeShift(-0.25, 0));
+    this.container.querySelector('#pb-shift-x-plus')?.addEventListener('click', () => this.editor?.textureTool.nudgeShift(0.25, 0));
+    this.container.querySelector('#pb-shift-y-minus')?.addEventListener('click', () => this.editor?.textureTool.nudgeShift(0, -0.25));
+    this.container.querySelector('#pb-shift-y-plus')?.addEventListener('click', () => this.editor?.textureTool.nudgeShift(0, 0.25));
+
+    // Shift Inputs
+    const shiftXInput = this.container.querySelector('#pb-tex-shift-x') as HTMLInputElement | null;
+    const shiftYInput = this.container.querySelector('#pb-tex-shift-y') as HTMLInputElement | null;
+    const updateShift = () => {
+      if (!this.editor || !shiftXInput || !shiftYInput) return;
+      const x = parseFloat(shiftXInput.value) || 0;
+      const y = parseFloat(shiftYInput.value) || 0;
+      this.editor.textureTool.setShift(x, y);
+    };
+    shiftXInput?.addEventListener('change', updateShift);
+    shiftYInput?.addEventListener('change', updateShift);
+
+    // Scale Inputs
+    const scaleXInput = this.container.querySelector('#pb-tex-scale-x') as HTMLInputElement | null;
+    const scaleYInput = this.container.querySelector('#pb-tex-scale-y') as HTMLInputElement | null;
+    const updateScale = () => {
+      if (!this.editor || !scaleXInput || !scaleYInput) return;
+      const sx = parseFloat(scaleXInput.value) || 1.0;
+      const sy = parseFloat(scaleYInput.value) || 1.0;
+      this.editor.textureTool.setScale(sx, sy);
+    };
+    scaleXInput?.addEventListener('change', updateScale);
+    scaleYInput?.addEventListener('change', updateScale);
+
+    this.container.querySelector('#pb-tex-flip-x')?.addEventListener('click', () => this.editor?.textureTool.flipScale('x'));
+    this.container.querySelector('#pb-tex-flip-y')?.addEventListener('click', () => this.editor?.textureTool.flipScale('y'));
+
+    // Scale Presets
+    const scalePresets = this.container.querySelectorAll('.pb-tex-presets [data-scale]');
+    scalePresets.forEach((chip) => {
+      chip.addEventListener('click', () => {
+        const val = parseFloat(chip.getAttribute('data-scale') || '1');
+        this.editor?.textureTool.setScale(val, val);
+      });
+    });
+
+    // Rotation Slider & Input
+    const rotRange = this.container.querySelector('#pb-tex-rot-range') as HTMLInputElement | null;
+    const rotInput = this.container.querySelector('#pb-tex-rot-input') as HTMLInputElement | null;
+    rotRange?.addEventListener('input', () => {
+      if (!rotRange || !rotInput) return;
+      const deg = parseInt(rotRange.value, 10) || 0;
+      rotInput.value = deg.toString();
+      this.editor?.textureTool.setRotation(deg);
+    });
+    rotInput?.addEventListener('change', () => {
+      if (!rotRange || !rotInput) return;
+      const deg = parseInt(rotInput.value, 10) || 0;
+      rotRange.value = deg.toString();
+      this.editor?.textureTool.setRotation(deg);
+    });
+
+    // Rotation Presets
+    const rotPresets = this.container.querySelectorAll('.pb-tex-presets [data-rot]');
+    rotPresets.forEach((chip) => {
+      chip.addEventListener('click', () => {
+        const val = parseInt(chip.getAttribute('data-rot') || '0', 10);
+        this.editor?.textureTool.setRotation(val);
+      });
+    });
+
+    // Alignment Actions
+    this.container.querySelector('#pb-tex-btn-fit')?.addEventListener('click', () => this.editor?.textureTool.fitSelectedFaces());
+    this.container.querySelector('#pb-tex-btn-planar')?.addEventListener('click', () => this.editor?.textureTool.planarSelectedFaces());
+    this.container.querySelector('#pb-tex-btn-reset')?.addEventListener('click', () => this.editor?.textureTool.resetAlignment());
+
+    // Apply Buttons
+    this.container.querySelector('#pb-tex-btn-apply-sel')?.addEventListener('click', () => this.editor?.textureTool.applyCurrentSettingsToSelection(true));
+    this.container.querySelector('#pb-tex-btn-apply-obj')?.addEventListener('click', () => this.editor?.textureTool.applyToEntireMesh());
   }
 }

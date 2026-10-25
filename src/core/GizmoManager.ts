@@ -86,6 +86,11 @@ export class GizmoManager {
       return;
     }
 
+    if (this.selectionManager.mode === 'brush') {
+      this.transformControls.detach();
+      return;
+    }
+
     if (this.selectionManager.mode === 'object') {
       this.transformControls.attach(mesh.group);
     } else {

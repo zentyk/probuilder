@@ -10,6 +10,8 @@ import { GeometryOperations } from './GeometryOperations';
 import { PlaytestController } from './PlaytestController';
 import { ViewCube } from './ViewCube';
 import { ExportManager } from './ExportManager';
+import { BrushTool } from './BrushTool';
+import { TextureTool } from './TextureTool';
 import type { SelectionMode, ShapeType, TransformSpace, TransformTool } from './types';
 
 export class Editor {
@@ -26,6 +28,8 @@ export class Editor {
   public materialManager: MaterialManager;
   public playtestController: PlaytestController;
   public viewCube: ViewCube;
+  public brushTool: BrushTool;
+  public textureTool: TextureTool;
 
   private gridHelper: THREE.GridHelper;
   private clock = new THREE.Clock();
@@ -79,6 +83,8 @@ export class Editor {
     this.historyManager = new HistoryManager();
     this.playtestController = new PlaytestController(this.camera, this.renderer.domElement);
     this.viewCube = new ViewCube(container, this.camera);
+    this.brushTool = new BrushTool(this);
+    this.textureTool = new TextureTool(this);
 
     this.setupViewCube();
     this.setupEventListeners();
@@ -450,14 +456,37 @@ export class Editor {
   // --- Material Application ---
 
   public applyMaterialToMesh(mesh: EditableMesh, materialId: string): void {
-    const mat = this.materialManager.getMaterial(materialId);
-    mesh.surfaceMesh.material = mat;
+    const matIndex = this.materialManager.getMaterialIndex(materialId);
+    for (const face of mesh.faces) {
+      face.materialIndex = matIndex;
+    }
+    mesh.rebuildGeometry();
+    this.notifyUI();
+  }
+
+  public applyMaterialToFaces(mesh: EditableMesh, faceIds: number[], materialId: string): void {
+    const matIndex = this.materialManager.getMaterialIndex(materialId);
+    for (const faceId of faceIds) {
+      const face = mesh.getFaceById(faceId);
+      if (face) {
+        face.materialIndex = matIndex;
+      }
+    }
+    mesh.rebuildGeometry();
     this.notifyUI();
   }
 
   public applyMaterialToSelected(materialId: string): void {
     const mesh = this.selectionManager.selectedMesh;
     if (!mesh) return;
+
+    if (this.selectionManager.mode === 'face' && this.selectionManager.selectedFaces.size > 0) {
+      const faceIds = Array.from(this.selectionManager.selectedFaces);
+      this.applyMaterialToFaces(mesh, faceIds, materialId);
+      this.recordHistory(`Apply Material to Faces (${materialId})`);
+      this.toast(`Applied ${materialId} to ${faceIds.length} face(s)`, 'success');
+      return;
+    }
 
     this.applyMaterialToMesh(mesh, materialId);
     this.recordHistory(`Apply Material ${materialId}`);
@@ -467,8 +496,21 @@ export class Editor {
   // --- Mode & Tool Controls ---
 
   public setSelectionMode(mode: SelectionMode): void {
-    this.selectionManager.setMode(mode);
-    this.gizmoManager.updateGizmoAttachment();
+    if (mode === 'brush') {
+      this.selectionManager.setMode('brush');
+      this.brushTool.activate();
+      this.gizmoManager.transformControls.detach();
+    } else {
+      if (this.brushTool.isActive) {
+        this.brushTool.deactivate();
+      }
+      this.selectionManager.setMode(mode);
+      if (this.textureTool?.isActive) {
+        this.gizmoManager.transformControls.detach();
+      } else {
+        this.gizmoManager.updateGizmoAttachment();
+      }
+    }
     this.notifyUI();
   }
 
@@ -636,16 +678,47 @@ export class Editor {
     const dom = this.renderer.domElement;
 
     dom.addEventListener('pointermove', (e) => {
-      if (this.playtestController.isActive || this.gizmoManager.isBusy() || this.gizmoManager.transformControls.axis !== null) return;
+      if (this.playtestController.isActive) return;
 
       const rect = dom.getBoundingClientRect();
       const ndcX = ((e.clientX - rect.left) / rect.width) * 2 - 1;
       const ndcY = -((e.clientY - rect.top) / rect.height) * 2 + 1;
 
+      if (this.brushTool.isActive) {
+        this.brushTool.handlePointerMove(e, ndcX, ndcY);
+        return;
+      }
+
+      if (this.gizmoManager.isBusy() || this.gizmoManager.transformControls.axis !== null) return;
       this.selectionManager.handlePointerMove(ndcX, ndcY, this.camera, this.meshes);
     });
 
     dom.addEventListener('pointerdown', (e) => {
+      if (this.playtestController.isActive) return;
+
+      if (this.brushTool.isActive) {
+        if (e.button === 0) {
+          const rect = dom.getBoundingClientRect();
+          const ndcX = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+          const ndcY = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+          if (this.brushTool.handlePointerDown(e, ndcX, ndcY)) {
+            return;
+          }
+        }
+      }
+
+      // Texture Tool: Instant eyedropper (Left-Click) or paint (Right-Click) on click down
+      if (this.textureTool.isActive && (e.button === 0 || e.button === 2)) {
+        const rect = dom.getBoundingClientRect();
+        const ndcX = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+        const ndcY = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+        if (this.textureTool.handleViewportClick(e.button, ndcX, ndcY)) {
+          this.orbitControls.enabled = false;
+          this.isPointerDown = false;
+          return;
+        }
+      }
+
       if (this.gizmoManager.transformControls.axis !== null || this.gizmoManager.isBusy()) {
         this.orbitControls.enabled = false;
       }
@@ -654,6 +727,16 @@ export class Editor {
     });
 
     dom.addEventListener('pointerup', (e) => {
+      if (!this.gizmoManager.isBusy()) {
+        this.orbitControls.enabled = true;
+      }
+
+      if (this.brushTool.isActive && this.brushTool.isDragging) {
+        this.brushTool.handlePointerUp(e);
+        this.notifyUI();
+        return;
+      }
+
       if (!this.isPointerDown) return;
       this.isPointerDown = false;
 
@@ -662,18 +745,50 @@ export class Editor {
       }
 
       const dist = Math.hypot(e.clientX - this.pointerDownPos.x, e.clientY - this.pointerDownPos.y);
-      if (dist < 4) {
-        // True click without camera drag
-        const isShift = e.shiftKey;
-        this.selectionManager.handlePointerClick(isShift, this.meshes);
-        this.gizmoManager.updateGizmoAttachment();
-        this.notifyUI();
+      if (dist < 8) {
+        const rect = dom.getBoundingClientRect();
+        const ndcX = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+        const ndcY = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+
+        if (this.textureTool.isActive) {
+          if (this.textureTool.handleViewportClick(e.button, ndcX, ndcY)) {
+            return;
+          }
+        }
+
+        if (e.button === 0) {
+          // True click without camera drag
+          const isShift = e.shiftKey;
+          this.selectionManager.handlePointerClick(isShift, this.meshes);
+          this.gizmoManager.updateGizmoAttachment();
+          this.notifyUI();
+        }
       }
     });
 
+    dom.addEventListener('contextmenu', (e) => {
+      if (this.textureTool.isActive) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+    });
+
+    dom.addEventListener('wheel', (e) => {
+      if (this.brushTool.isActive) {
+        e.preventDefault();
+        this.brushTool.handleWheel(e);
+        this.notifyUI();
+      }
+    }, { passive: false });
+
     // Selection changed callback
     this.selectionManager.onSelectionChanged = () => {
-      this.gizmoManager.updateGizmoAttachment();
+      if (this.textureTool.isActive) {
+        this.gizmoManager.transformControls.detach();
+        this.textureTool.syncFromCurrentSelection();
+      } else {
+        this.gizmoManager.updateGizmoAttachment();
+      }
       this.notifyUI();
     };
 
@@ -706,11 +821,29 @@ export class Editor {
       if (this.playtestController.isActive) return;
       if (['INPUT', 'TEXTAREA'].includes((e.target as HTMLElement).tagName)) return;
 
-      // Mode Shortcuts: 1 (Object), 2 (Vertex), 3 (Edge), 4 (Face)
+      // Mode Shortcuts: 1 (Object), 2 (Vertex), 3 (Edge), 4 (Face), B (Brush)
       if (e.key === '1') this.setSelectionMode('object');
       if (e.key === '2') this.setSelectionMode('vertex');
       if (e.key === '3') this.setSelectionMode('edge');
       if (e.key === '4') this.setSelectionMode('face');
+      if (e.key.toLowerCase() === 'b' && !e.ctrlKey && !e.shiftKey) {
+        if (this.selectionManager.mode === 'brush') this.setSelectionMode('object');
+        else this.setSelectionMode('brush');
+      }
+
+      // Escape: cancel brush drag, close texture inspector, or exit brush mode
+      if (e.key === 'Escape') {
+        if (this.brushTool.isDragging) {
+          e.preventDefault();
+          this.brushTool.cancelDrag();
+        } else if (this.textureTool.isActive) {
+          e.preventDefault();
+          this.textureTool.deactivate();
+        } else if (this.selectionManager.mode === 'brush') {
+          e.preventDefault();
+          this.setSelectionMode('object');
+        }
+      }
 
       // Tool Shortcuts: W (Translate), E (Rotate), R (Scale)
       if (e.key.toLowerCase() === 'w' && !e.ctrlKey) this.setTransformTool('translate');
@@ -744,7 +877,11 @@ export class Editor {
         }
       }
 
-      // Geometry Shortcuts: Shift+E (Extrude), Shift+I (Inset), Shift+B (Bevel)
+      // Geometry Shortcuts: Shift+E (Extrude), Shift+I (Inset), Shift+B (Bevel), Shift+A (Texture Inspector)
+      if (e.shiftKey && (e.code === 'KeyA' || e.key.toUpperCase() === 'A')) {
+        e.preventDefault();
+        this.textureTool.toggle();
+      }
       if (e.shiftKey && e.key.toUpperCase() === 'E') {
         e.preventDefault();
         this.extrudeSelected();
@@ -781,7 +918,7 @@ export class Editor {
     this.viewCube.update();
   };
 
-  private notifyUI(): void {
+  public notifyUI(): void {
     if (this.onStateChanged) this.onStateChanged();
   }
 
