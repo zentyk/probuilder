@@ -15,6 +15,7 @@ import { TextureTool } from './TextureTool';
 import { ClipTool } from './ClipTool';
 import { CSGTool } from './CSGTool';
 import { ViewportManager } from './ViewportManager';
+import { PolyBrushTool } from './PolyBrushTool';
 import { Entity } from './Entity';
 import type { EntityType, LayoutMode, SelectionMode, ShapeType, TransformSpace, TransformTool, ViewportId } from './types';
 
@@ -34,6 +35,7 @@ export class Editor {
   public playtestController: PlaytestController;
   public viewCube: ViewCube;
   public brushTool: BrushTool;
+  public polyBrushTool: PolyBrushTool;
   public textureTool: TextureTool;
   public clipTool: ClipTool;
   public csgTool: CSGTool;
@@ -92,6 +94,7 @@ export class Editor {
     this.playtestController = new PlaytestController(this.camera, this.renderer.domElement);
     this.viewCube = new ViewCube(container, this.camera);
     this.brushTool = new BrushTool(this);
+    this.polyBrushTool = new PolyBrushTool(this);
     this.textureTool = new TextureTool(this);
     this.clipTool = new ClipTool(this);
     this.csgTool = new CSGTool(this);
@@ -595,6 +598,9 @@ export class Editor {
       if (this.brushTool.isActive) {
         this.brushTool.deactivate();
       }
+      if (this.polyBrushTool?.isActive) {
+        this.polyBrushTool.deactivate();
+      }
       this.selectionManager.setMode(mode);
       if (this.textureTool?.isActive) {
         this.gizmoManager.transformControls.detach();
@@ -848,6 +854,11 @@ export class Editor {
         return;
       }
 
+      if (this.polyBrushTool.isActive) {
+        this.polyBrushTool.handlePointerMove(e, ndcX, ndcY);
+        return;
+      }
+
       if (this.brushTool.isActive) {
         this.brushTool.handlePointerMove(e, ndcX, ndcY);
         return;
@@ -895,6 +906,20 @@ export class Editor {
         }
       }
 
+      if (this.polyBrushTool.isActive) {
+        if (e.button === 0 || e.button === 2) {
+          const rect = dom.getBoundingClientRect();
+          const ndcX = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+          const ndcY = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+          if (this.polyBrushTool.handlePointerDown(e, ndcX, ndcY)) {
+            this.orbitControls.enabled = false;
+            this.isPointerDown = false;
+            this.notifyUI();
+            return;
+          }
+        }
+      }
+
       if (this.brushTool.isActive) {
         if (e.button === 0) {
           const rect = dom.getBoundingClientRect();
@@ -930,6 +955,11 @@ export class Editor {
       const under = this.viewportManager.getViewportUnderPointer(e.clientX, e.clientY);
       if (under.viewportId === 'perspective' && !this.gizmoManager.isBusy()) {
         this.orbitControls.enabled = true;
+      }
+
+      if (this.polyBrushTool.isActive) {
+        this.polyBrushTool.handlePointerUp();
+        this.notifyUI();
       }
 
       if (this.brushTool.isActive && this.brushTool.isDragging) {
@@ -980,6 +1010,13 @@ export class Editor {
         this.notifyUI();
         return;
       }
+      if (this.polyBrushTool.isActive) {
+        if (this.polyBrushTool.handleWheel(e)) {
+          e.preventDefault();
+          this.notifyUI();
+          return;
+        }
+      }
       if (this.brushTool.isActive) {
         e.preventDefault();
         this.brushTool.handleWheel(e);
@@ -1028,6 +1065,14 @@ export class Editor {
       if (this.playtestController.isActive) return;
       if (['INPUT', 'TEXTAREA'].includes((e.target as HTMLElement).tagName)) return;
 
+      // Shift+P: Toggle Polygon Brush Tool (Draw polygon & extrude)
+      if (e.key.toLowerCase() === 'p' && e.shiftKey && !e.ctrlKey && !e.metaKey) {
+        e.preventDefault();
+        this.polyBrushTool.toggle();
+        this.notifyUI();
+        return;
+      }
+
       // Mode Shortcuts: 1 (Object), 2 (Vertex), 3 (Edge), 4 (Face), B (Brush)
       if (e.key === '1') this.setSelectionMode('object');
       if (e.key === '2') this.setSelectionMode('vertex');
@@ -1038,9 +1083,14 @@ export class Editor {
         else this.setSelectionMode('brush');
       }
 
-      // Escape: cancel clip tool, cancel csg tool, cancel brush drag, close texture inspector, or exit brush mode
+      // Escape: cancel poly brush, clip tool, csg tool, brush drag, or close texture inspector
       if (e.key === 'Escape') {
-        if (this.clipTool.isActive) {
+        if (this.polyBrushTool.isActive) {
+          e.preventDefault();
+          this.polyBrushTool.deactivate();
+          this.notifyUI();
+          return;
+        } else if (this.clipTool.isActive) {
           e.preventDefault();
           this.clipTool.deactivate();
         } else if (this.csgTool.isActive) {
@@ -1055,6 +1105,15 @@ export class Editor {
         } else if (this.selectionManager.mode === 'brush') {
           e.preventDefault();
           this.setSelectionMode('object');
+        }
+      }
+
+      // If PolyBrushTool is active, let it handle Enter, Backspace, etc.
+      if (this.polyBrushTool.isActive) {
+        if (this.polyBrushTool.handleKeyDown(e)) {
+          e.preventDefault();
+          this.notifyUI();
+          return;
         }
       }
 
@@ -1080,8 +1139,8 @@ export class Editor {
       // Snapping Toggle: G
       if (e.key.toLowerCase() === 'g') this.toggleSnapping();
 
-      // Playtest Toggle: P
-      if (e.key.toLowerCase() === 'p') this.togglePlaytest();
+      // Playtest Toggle: P (without Shift)
+      if (e.key.toLowerCase() === 'p' && !e.shiftKey && !e.ctrlKey) this.togglePlaytest();
 
       // Undo / Redo: Ctrl+Z, Ctrl+Y
       if (e.ctrlKey && e.key.toLowerCase() === 'z') {

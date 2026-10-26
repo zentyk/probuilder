@@ -1183,6 +1183,36 @@ html, body, #app {
   margin-top: 1px;
 }
 
+/* Polygon Brush Specific Hero Button (Shift+P) */
+.pb-brush-hero-btn.pb-poly-brush-btn {
+  background: linear-gradient(135deg, rgba(250, 204, 21, 0.08), rgba(24, 26, 34, 0.95));
+  border-color: rgba(250, 204, 21, 0.3);
+}
+
+.pb-brush-hero-btn.pb-poly-brush-btn:hover {
+  background: linear-gradient(135deg, rgba(250, 204, 21, 0.18), rgba(32, 35, 46, 0.98));
+  border-color: #facc15;
+  box-shadow: 0 0 14px rgba(250, 204, 21, 0.25);
+}
+
+.pb-brush-hero-btn.pb-poly-brush-btn.active {
+  background: linear-gradient(135deg, rgba(250, 204, 21, 0.25), rgba(234, 179, 8, 0.15));
+  border-color: #facc15;
+  box-shadow: 0 0 18px rgba(250, 204, 21, 0.4), inset 0 0 0 1px rgba(250, 204, 21, 0.3);
+}
+
+.pb-brush-icon-wrapper.poly {
+  background: rgba(250, 204, 21, 0.16);
+  border-color: rgba(250, 204, 21, 0.4);
+  color: #fde047;
+}
+
+.pb-brush-hero-btn.active .pb-brush-icon-wrapper.poly {
+  background: #facc15;
+  color: #0f1117;
+  box-shadow: 0 2px 10px rgba(250, 204, 21, 0.4);
+}
+
 .pb-brush-controls {
   margin-top: 8px;
   padding: 6px 8px;
@@ -2082,6 +2112,97 @@ html, body, #app {
   grid-template-columns: 1.3fr 1fr;
   gap: 8px;
   margin-top: 2px;
+}
+
+/* ==========================================================================
+   Floating Polygon Brush Tool HUD (Draw Polygon & Extrude / Shift+P)
+   ========================================================================== */
+
+.pb-poly-brush-hud {
+  position: absolute;
+  top: 18px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 380px;
+  z-index: 1100;
+  background: rgba(18, 20, 28, 0.95);
+  border: 1px solid rgba(250, 204, 21, 0.45);
+  border-radius: 10px;
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.65), 0 0 18px rgba(250, 204, 21, 0.2);
+  display: flex;
+  flex-direction: column;
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  animation: pbClipFadeIn 0.16s ease-out;
+  user-select: none;
+}
+
+.pb-poly-status-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 2px;
+}
+
+.pb-poly-badge {
+  background: rgba(250, 204, 21, 0.15);
+  color: #facc15;
+  border: 1px solid rgba(250, 204, 21, 0.35);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  padding: 3px 8px;
+  border-radius: 4px;
+}
+
+.pb-poly-badge.extruding {
+  background: rgba(251, 146, 60, 0.18);
+  color: #fb923c;
+  border-color: rgba(251, 146, 60, 0.45);
+}
+
+.pb-poly-counter {
+  font-size: 11px;
+  color: #cbd5e1;
+  font-family: 'JetBrains Mono', monospace;
+  background: #141620;
+  padding: 2px 7px;
+  border-radius: 4px;
+  border: 1px solid #232738;
+}
+
+.pb-poly-extrude-row {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: #141722;
+  border: 1px solid #272d40;
+  border-radius: 6px;
+  padding: 10px 12px;
+}
+
+.pb-poly-height-inputs {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.pb-poly-height-inputs input[type="range"] {
+  flex: 1;
+}
+
+.pb-poly-preset-chips {
+  display: flex;
+  gap: 6px;
+  margin-top: 2px;
+}
+
+.pb-poly-preset-chips .pb-chip {
+  flex: 1;
+  text-align: center;
+  padding: 3px 6px;
+  font-size: 11px;
 }
 
 /* ==========================================================================

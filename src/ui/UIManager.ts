@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { Editor } from '../core/Editor';
 import type { ClipMode, CSGMode, SelectionMode, ShapeType, TransformTool, ViewportId } from '../core/types';
+import type { PolyBrushHUDData } from '../core/PolyBrushTool';
 
 export class UIManager {
   private editor: Editor | null = null;
@@ -243,6 +244,19 @@ export class UIManager {
                   <span class="pb-brush-hero-desc">Click &amp; drag on floor grid</span>
                 </div>
                 <span class="pb-key">B</span>
+              </button>
+              <button id="pb-tool-poly-brush" class="pb-brush-hero-btn pb-poly-brush-btn" style="margin-top: 6px;" title="Draw Polygon Footprint on Grid & Extrude (Shift+P)">
+                <div class="pb-brush-icon-wrapper poly">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polygon points="12 2 22 8.5 18 20 6 20 2 8.5"></polygon>
+                    <path d="M12 2v10M6 20l6-8M18 20l-6-8"></path>
+                  </svg>
+                </div>
+                <div class="pb-brush-hero-text">
+                  <span class="pb-brush-hero-title">Polygon Brush</span>
+                  <span class="pb-brush-hero-desc">Draw polygon &amp; extrude</span>
+                </div>
+                <span class="pb-key">Shift+P</span>
               </button>
               <div class="pb-brush-controls">
                 <div class="pb-brush-height-row">
@@ -1246,6 +1260,66 @@ export class UIManager {
           </div>
         </div>
 
+        <!-- Floating Polygon Brush HUD (Draw Polygon & Extrude / Shift+P) -->
+        <div id="pb-poly-brush-hud" class="pb-clip-hud pb-poly-brush-hud" style="display: none;">
+          <div class="pb-clip-hud-header">
+            <div class="pb-clip-hud-title-group">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#facc15" stroke-width="2">
+                <polygon points="12 2 22 8.5 18 20 6 20 2 8.5"></polygon>
+              </svg>
+              <span class="pb-clip-hud-title">Polygon Brush Tool</span>
+              <span class="pb-key">Shift+P</span>
+            </div>
+            <button id="pb-poly-brush-close-btn" class="pb-modal-close-btn" title="Exit Tool (Esc)">✕</button>
+          </div>
+
+          <div class="pb-clip-hud-body">
+            <!-- Phase Badge & Guidance -->
+            <div class="pb-poly-status-row">
+              <span id="pb-poly-phase-badge" class="pb-section-badge pb-poly-badge">DRAWING FOOTPRINT</span>
+              <span id="pb-poly-points-count" class="pb-poly-counter">0 vertices placed</span>
+            </div>
+
+            <div id="pb-poly-guidance" class="pb-clip-guidance">
+              Click on the floor grid to place vertices. (Click 1st point or Enter to close).
+            </div>
+
+            <!-- Extrusion Height Control (visible during Extruding phase) -->
+            <div id="pb-poly-extrude-controls" class="pb-poly-extrude-row" style="display: none;">
+              <div class="pb-field-header">
+                <label>Extrusion Height:</label>
+                <span id="pb-poly-height-val" class="pb-field-val">2.00m</span>
+              </div>
+              <div class="pb-poly-height-inputs">
+                <input type="range" id="pb-poly-height-slider" min="0.25" max="20" step="0.25" value="2.0" class="pb-tex-slider" />
+                <input type="number" id="pb-poly-height-num" min="0.1" max="100" step="0.25" value="2.0" class="pb-text-input pb-text-input-sm pb-entity-yaw-num" />
+              </div>
+              <div class="pb-preset-chips pb-poly-preset-chips">
+                <button type="button" class="pb-chip" data-h="1.0">1.0m</button>
+                <button type="button" class="pb-chip active" data-h="2.0">2.0m</button>
+                <button type="button" class="pb-chip" data-h="3.0">3.0m</button>
+                <button type="button" class="pb-chip" data-h="4.0">4.0m</button>
+              </div>
+            </div>
+
+            <!-- Actions Bar -->
+            <div class="pb-clip-actions-row">
+              <button id="pb-poly-btn-action" class="pb-btn pb-btn-sm pb-btn-accent" disabled title="Close polygon and extrude / Create brush">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <polyline points="20 6 9 17 4 12"></polyline>
+                </svg>
+                <span id="pb-poly-action-text">Close Polygon (Enter)</span>
+              </button>
+              <button id="pb-poly-btn-undo" class="pb-btn pb-btn-sm pb-btn-secondary" title="Undo last point (Backspace)">
+                Undo Point (⌫)
+              </button>
+              <button id="pb-poly-btn-cancel" class="pb-btn pb-btn-sm pb-btn-secondary" title="Cancel & exit (Esc)">
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+
         <!-- Toast Notifications Container -->
         <div id="pb-toast-container" class="pb-toast-container"></div>
       </div>
@@ -1819,6 +1893,9 @@ export class UIManager {
 
     // Setup Multi-View Orthographic Events & HUD
     this.setupViewportEvents();
+
+    // Setup Polygon Brush Tool Events & HUD
+    this.setupPolyBrushToolEvents();
   }
 
   private setupClipToolEvents(): void {
@@ -2098,6 +2175,195 @@ export class UIManager {
     };
   }
 
+  private setupPolyBrushToolEvents(): void {
+    if (!this.editor) return;
+
+    // Toggle button in left toolbar
+    this.container.querySelector('#pb-tool-poly-brush')?.addEventListener('click', () => {
+      this.editor?.polyBrushTool.toggle();
+      this.updateUI();
+    });
+
+    // Close button
+    this.container.querySelector('#pb-poly-brush-close-btn')?.addEventListener('click', () => {
+      this.editor?.polyBrushTool.deactivate();
+      this.updateUI();
+    });
+
+    // Cancel button
+    this.container.querySelector('#pb-poly-btn-cancel')?.addEventListener('click', () => {
+      this.editor?.polyBrushTool.deactivate();
+      this.updateUI();
+    });
+
+    // Primary action button (Close Polygon in drawing, Commit Brush in extruding)
+    this.container.querySelector('#pb-poly-btn-action')?.addEventListener('click', () => {
+      if (!this.editor) return;
+      if (this.editor.polyBrushTool.state === 'drawing') {
+        this.editor.polyBrushTool.closePolygonAndExtrude();
+      } else if (this.editor.polyBrushTool.state === 'extruding') {
+        this.editor.polyBrushTool.commitBrush();
+      }
+      this.updateUI();
+    });
+
+    // Undo button
+    this.container.querySelector('#pb-poly-btn-undo')?.addEventListener('click', () => {
+      if (!this.editor) return;
+      if (this.editor.polyBrushTool.state === 'drawing') {
+        this.editor.polyBrushTool.undoLastPoint();
+      } else if (this.editor.polyBrushTool.state === 'extruding') {
+        this.editor.polyBrushTool.backToDrawing();
+      }
+      this.updateUI();
+    });
+
+    // Height Slider & Number input
+    const slider = this.container.querySelector('#pb-poly-height-slider') as HTMLInputElement;
+    const numInput = this.container.querySelector('#pb-poly-height-num') as HTMLInputElement;
+    const heightVal = this.container.querySelector('#pb-poly-height-val');
+
+    const updateHeight = (h: number) => {
+      if (!this.editor) return;
+      this.editor.polyBrushTool.setExtrusionHeight(h);
+      if (heightVal) heightVal.textContent = `${h.toFixed(2)}m`;
+      if (slider && document.activeElement !== slider) slider.value = h.toString();
+      if (numInput && document.activeElement !== numInput) numInput.value = h.toFixed(2);
+      this.container.querySelectorAll('.pb-poly-preset-chips .pb-chip').forEach((c) => {
+        const chipH = parseFloat(c.getAttribute('data-h') || '0');
+        c.classList.toggle('active', Math.abs(chipH - h) < 0.05);
+      });
+    };
+
+    slider?.addEventListener('input', () => {
+      const h = parseFloat(slider.value) || 2.0;
+      updateHeight(h);
+    });
+
+    numInput?.addEventListener('input', () => {
+      const h = Math.max(0.1, parseFloat(numInput.value) || 2.0);
+      updateHeight(h);
+    });
+
+    numInput?.addEventListener('change', () => {
+      const h = Math.max(0.1, parseFloat(numInput.value) || 2.0);
+      updateHeight(h);
+    });
+
+    // Preset height chips
+    this.container.querySelectorAll('.pb-poly-preset-chips .pb-chip').forEach((chip) => {
+      chip.addEventListener('click', () => {
+        const h = parseFloat(chip.getAttribute('data-h') || '2.0');
+        updateHeight(h);
+      });
+    });
+
+    // Tool state change callback
+    this.editor.polyBrushTool.onStateChanged = (data) => {
+      this.updatePolyBrushHUD(data);
+    };
+  }
+
+  private updatePolyBrushHUD(data: PolyBrushHUDData): void {
+    const hud = this.container.querySelector('#pb-poly-brush-hud') as HTMLElement;
+    if (!hud) return;
+
+    const isActive = data.state !== 'inactive';
+    hud.style.display = isActive ? 'flex' : 'none';
+
+    // Left shelf button active state
+    const btn = this.container.querySelector('#pb-tool-poly-brush');
+    if (btn) btn.classList.toggle('active', isActive);
+
+    if (!isActive) return;
+
+    // Phase Badge
+    const badge = this.container.querySelector('#pb-poly-phase-badge');
+    if (badge) {
+      if (data.state === 'drawing') {
+        badge.textContent = 'DRAWING FOOTPRINT';
+        badge.className = 'pb-section-badge pb-poly-badge';
+      } else {
+        badge.textContent = 'EXTRUDING PRISM';
+        badge.className = 'pb-section-badge pb-poly-badge extruding';
+      }
+    }
+
+    // Points Count
+    const countEl = this.container.querySelector('#pb-poly-points-count');
+    if (countEl) {
+      countEl.textContent = `${data.pointCount} ${data.pointCount === 1 ? 'vertex' : 'vertices'} placed`;
+    }
+
+    // Guidance Message
+    const guidance = this.container.querySelector('#pb-poly-guidance');
+    if (guidance) {
+      if (data.state === 'drawing') {
+        if (data.pointCount === 0) {
+          guidance.textContent = 'Click on the floor grid to place 1st vertex.';
+        } else if (data.pointCount === 1) {
+          guidance.textContent = 'Click 2nd vertex (rubberband line shows edge preview)...';
+        } else if (data.pointCount === 2) {
+          guidance.textContent = 'Click 3rd vertex to form polygon base...';
+        } else {
+          guidance.textContent = 'Click next point, click vertex #1 to close, or press Enter / button below.';
+        }
+      } else {
+        guidance.textContent = 'Drag cursor up/down or scroll mouse wheel to adjust height. Press Enter to create brush!';
+      }
+    }
+
+    // Extrusion controls visibility
+    const extrudeControls = this.container.querySelector('#pb-poly-extrude-controls') as HTMLElement;
+    if (extrudeControls) {
+      extrudeControls.style.display = data.state === 'extruding' ? 'block' : 'none';
+    }
+
+    // Height sync
+    const heightVal = this.container.querySelector('#pb-poly-height-val');
+    if (heightVal) heightVal.textContent = `${data.height.toFixed(2)}m`;
+
+    const slider = this.container.querySelector('#pb-poly-height-slider') as HTMLInputElement;
+    if (slider && document.activeElement !== slider) {
+      slider.value = data.height.toString();
+    }
+
+    const numInput = this.container.querySelector('#pb-poly-height-num') as HTMLInputElement;
+    if (numInput && document.activeElement !== numInput) {
+      numInput.value = data.height.toFixed(2);
+    }
+
+    this.container.querySelectorAll('.pb-poly-preset-chips .pb-chip').forEach((c) => {
+      const chipH = parseFloat(c.getAttribute('data-h') || '0');
+      c.classList.toggle('active', Math.abs(chipH - data.height) < 0.05);
+    });
+
+    // Primary action button
+    const actionBtn = this.container.querySelector('#pb-poly-btn-action') as HTMLButtonElement;
+    const actionText = this.container.querySelector('#pb-poly-action-text');
+    if (actionBtn && actionText) {
+      if (data.state === 'drawing') {
+        actionText.textContent = 'Close Polygon (Enter)';
+        actionBtn.disabled = !data.canClose;
+      } else {
+        actionText.textContent = 'Create Brush (Enter)';
+        actionBtn.disabled = !data.canCreate;
+      }
+    }
+
+    // Undo button
+    const undoBtn = this.container.querySelector('#pb-poly-btn-undo') as HTMLButtonElement;
+    if (undoBtn) {
+      if (data.state === 'drawing') {
+        undoBtn.textContent = 'Undo Point (⌫)';
+        undoBtn.disabled = data.pointCount === 0;
+      } else {
+        undoBtn.textContent = 'Back to 2D (⌫)';
+        undoBtn.disabled = false;
+      }
+    }
+  }
+
   public updateUI(): void {
     if (!this.editor) return;
     const mode = this.editor.selectionManager.mode;
@@ -2371,6 +2637,13 @@ export class UIManager {
     if (csgBtn) csgBtn.classList.toggle('active', isCSG);
     const csgHud = this.container.querySelector('#pb-csg-hud') as HTMLElement;
     if (csgHud) csgHud.style.display = isCSG ? 'flex' : 'none';
+
+    // Poly Brush Hero Button & HUD Sync
+    const isPolyActive = !!this.editor?.polyBrushTool?.isActive;
+    const polyHeroBtn = this.container.querySelector('#pb-tool-poly-brush');
+    if (polyHeroBtn) polyHeroBtn.classList.toggle('active', isPolyActive);
+    const polyHud = this.container.querySelector('#pb-poly-brush-hud') as HTMLElement;
+    if (polyHud) polyHud.style.display = isPolyActive ? 'flex' : 'none';
 
     // Viewport Layout Sync
     const isQuad = this.editor.viewportManager.layoutMode === 'quad' || this.editor.viewportManager.maximizedViewportId !== null;
