@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { GLTFExporter } from 'three/examples/jsm/exporters/GLTFExporter.js';
 import { EditableMesh } from './EditableMesh';
+import { MaterialManager } from './MaterialManager';
 import type { Entity } from './Entity';
 
 export class ExportManager {
@@ -268,6 +269,247 @@ export class ExportManager {
         { binary }
       );
     });
+  }
+
+  /**
+   * Export all meshes and entities as standard Quake .map format.
+   * Compatible with TrenchBroom, NetRadiant, q3map2, Qodot, and FuncGodot.
+   * Scale factor defaults to 32.0 (1 meter = 32 Quake units, standard TrenchBroom metric).
+   */
+  public static exportToMAP(
+    meshes: EditableMesh[],
+    entities: Entity[] = [],
+    scale = 32.0
+  ): string {
+    let map = `// Game: Quake / Generic\n`;
+    map += `// Format: Standard Quake .map (TrenchBroom / Qodot / FuncGodot compatible)\n`;
+    map += `// Exported by Voskel WebGL Level Editor\n`;
+    map += `// Export Date: ${new Date().toISOString()}\n`;
+    map += `// Scale: 1m = ${scale} units\n\n`;
+
+    // Helper: format number cleanly (integer if close to integer, else 1-2 decimals)
+    const fmt = (n: number): string => {
+      if (Math.abs(n - Math.round(n)) < 0.005) {
+        return Math.round(n).toString();
+      }
+      return n.toFixed(2).replace(/\.?0+$/, '');
+    };
+
+    // Helper: convert Three.js Vector3 to Quake coords (X=X, Y=-Z, Z=Y) * scale
+    const toQuake = (v: THREE.Vector3): { x: number; y: number; z: number } => {
+      return {
+        x: v.x * scale,
+        y: -v.z * scale,
+        z: v.y * scale,
+      };
+    };
+
+    // Helper: clean texture name for Quake
+    const sanitizeTexture = (matId?: string): string => {
+      if (!matId) return 'DEV_GRID';
+      return matId.toUpperCase().replace(/[^A-Z0-9_/]/g, '_');
+    };
+
+    // 1. Entity 0: worldspawn (contains all world solid geometry brushes)
+    map += `{\n`;
+    map += `"classname" "worldspawn"\n`;
+    map += `"message" "Voskel Level"\n`;
+    map += `"mapversion" "220"\n`;
+    map += `"wad" "textures.wad"\n`;
+
+    let brushIndex = 0;
+
+    for (const mesh of meshes) {
+      mesh.group.updateMatrixWorld(true);
+      const worldMat = mesh.group.matrixWorld;
+      const rotMat = new THREE.Matrix3().setFromMatrix4(worldMat);
+
+      // Collect world vertices
+      const worldVertices = mesh.vertices.map((v) => v.clone().applyMatrix4(worldMat));
+
+      // Build planes for this brush, deduplicating coplanar faces
+      const brushPlanes: string[] = [];
+      const seenPlanes = new Set<string>();
+
+      for (const face of mesh.faces) {
+        if (face.vertexIndices.length < 3) continue;
+
+        // Normal in world coordinates
+        const localNormal = mesh.computeFaceNormal(face);
+        const worldNormal = localNormal.clone().applyMatrix3(rotMat).normalize();
+
+        // Normal in Quake coordinates
+        const qNormal = new THREE.Vector3(worldNormal.x, -worldNormal.z, worldNormal.y).normalize();
+
+        // Get vertices of the face in Quake coordinates
+        const qVerts: THREE.Vector3[] = [];
+        for (const idx of face.vertexIndices) {
+          const wv = worldVertices[idx];
+          const q = toQuake(wv);
+          qVerts.push(new THREE.Vector3(q.x, q.y, q.z));
+        }
+
+        // Find 3 non-collinear points among face vertices
+        let p1: THREE.Vector3 | null = null;
+        let p2: THREE.Vector3 | null = null;
+        let p3: THREE.Vector3 | null = null;
+
+        for (let i = 0; i < qVerts.length - 2; i++) {
+          const a = qVerts[i];
+          const b = qVerts[i + 1];
+          const c = qVerts[i + 2];
+          const cross = new THREE.Vector3().subVectors(c, a).cross(new THREE.Vector3().subVectors(b, a));
+          if (cross.lengthSq() > 0.0001) {
+            p1 = a;
+            p2 = b;
+            p3 = c;
+            break;
+          }
+        }
+
+        if (!p1 || !p2 || !p3) {
+          p1 = qVerts[0];
+          p2 = qVerts[1];
+          p3 = qVerts[2];
+        }
+
+        // Check winding: in Quake, (p3 - p1) x (p2 - p1) must point outward (match qNormal)
+        const cross = new THREE.Vector3().subVectors(p3, p1).cross(new THREE.Vector3().subVectors(p2, p1));
+        if (cross.dot(qNormal) < 0) {
+          const temp = p2;
+          p2 = p3;
+          p3 = temp;
+        }
+
+        // Deduplication key: plane normal + distance
+        const dist = qNormal.dot(p1);
+        const planeKey = `${qNormal.x.toFixed(3)},${qNormal.y.toFixed(3)},${qNormal.z.toFixed(3)}_${dist.toFixed(1)}`;
+
+        if (seenPlanes.has(planeKey)) continue;
+        seenPlanes.add(planeKey);
+
+        const matId = MaterialManager.getInstance().getMaterialIdByIndex(face.materialIndex ?? 0);
+        const texName = sanitizeTexture(matId);
+        // Standard Quake plane format:
+        // ( x1 y1 z1 ) ( x2 y2 z2 ) ( x3 y3 z3 ) TEXTURE offset_x offset_y rotation scale_x scale_y
+        const planeLine = `( ${fmt(p1.x)} ${fmt(p1.y)} ${fmt(p1.z)} ) ( ${fmt(p2.x)} ${fmt(p2.y)} ${fmt(p2.z)} ) ( ${fmt(p3.x)} ${fmt(p3.y)} ${fmt(p3.z)} ) ${texName} 0 0 0 1.0 1.0`;
+        brushPlanes.push(planeLine);
+      }
+
+      // In Quake, a valid 3D brush needs at least 4 non-parallel bounding planes (e.g. tetrahedron, wedge, box)
+      if (brushPlanes.length >= 4) {
+        map += `// brush ${brushIndex} (${mesh.name})\n`;
+        map += `{\n`;
+        for (const plane of brushPlanes) {
+          map += `${plane}\n`;
+        }
+        map += `}\n`;
+        brushIndex++;
+      }
+    }
+
+    map += `}\n`; // Close worldspawn
+
+    // 2. Game Entities & Markers
+    let entIndex = 1;
+    for (const ent of entities) {
+      ent.group.updateMatrixWorld(true);
+      const pos = ent.group.position;
+      const rot = ent.group.rotation;
+
+      // Position in Quake coords
+      const qPos = toQuake(pos);
+      // Angle in Quake degrees (0 = East +X, 90 = North +Y, 180 = West -X, 270 = South -Y)
+      const yawDeg = Math.round(((-rot.y * 180) / Math.PI + 90) % 360 + 360) % 360;
+
+      if (ent.type === 'player_spawn') {
+        map += `// entity ${entIndex}\n`;
+        map += `{\n`;
+        map += `"classname" "info_player_start"\n`;
+        map += `"origin" "${fmt(qPos.x)} ${fmt(qPos.y)} ${fmt(qPos.z)}"\n`;
+        map += `"angle" "${yawDeg}"\n`;
+        map += `}\n`;
+        entIndex++;
+      } else if (ent.type === 'light_point') {
+        const intensity = ent.properties.intensity ?? 3.5;
+        const colorHex = ent.properties.color || '#ffb366';
+        const col = new THREE.Color(colorHex);
+        const lightVal = Math.round(intensity * 80);
+
+        map += `// entity ${entIndex}\n`;
+        map += `{\n`;
+        map += `"classname" "light"\n`;
+        map += `"origin" "${fmt(qPos.x)} ${fmt(qPos.y)} ${fmt(qPos.z)}"\n`;
+        map += `"light" "${lightVal}"\n`;
+        map += `"_color" "${col.r.toFixed(2)} ${col.g.toFixed(2)} ${col.b.toFixed(2)}"\n`;
+        map += `}\n`;
+        entIndex++;
+      } else if (ent.type === 'light_spot') {
+        const intensity = ent.properties.intensity ?? 5.0;
+        const colorHex = ent.properties.color || '#ffffff';
+        const col = new THREE.Color(colorHex);
+        const lightVal = Math.round(intensity * 80);
+        const cone = ent.properties.angle ?? 45;
+
+        map += `// entity ${entIndex}\n`;
+        map += `{\n`;
+        map += `"classname" "light"\n`;
+        map += `"origin" "${fmt(qPos.x)} ${fmt(qPos.y)} ${fmt(qPos.z)}"\n`;
+        map += `"light" "${lightVal}"\n`;
+        map += `"_color" "${col.r.toFixed(2)} ${col.g.toFixed(2)} ${col.b.toFixed(2)}"\n`;
+        map += `"angle" "${yawDeg}"\n`;
+        map += `"_cone" "${cone}"\n`;
+        map += `}\n`;
+        entIndex++;
+      } else if (ent.type === 'trigger_zone') {
+        // Trigger zones in Quake are brush entities!
+        const sx = (Math.max(0.5, ent.properties.sizeX ?? 4.0) * scale) / 2;
+        const sy = (Math.max(0.5, ent.properties.sizeY ?? 2.5) * scale);
+        const sz = (Math.max(0.5, ent.properties.sizeZ ?? 4.0) * scale) / 2;
+
+        const minX = qPos.x - sx;
+        const maxX = qPos.x + sx;
+        const minY = qPos.y - sz;
+        const maxY = qPos.y + sz;
+        const minZ = qPos.z;
+        const maxZ = qPos.z + sy;
+
+        const classname = ent.properties.zoneType === 'death_zone' ? 'trigger_hurt' : 'trigger_multiple';
+        const targetname = ent.properties.zoneTag || ent.name.replace(/\s+/g, '_');
+
+        map += `// entity ${entIndex}\n`;
+        map += `{\n`;
+        map += `"classname" "${classname}"\n`;
+        map += `"targetname" "${targetname}"\n`;
+        if (classname === 'trigger_hurt') {
+          map += `"dmg" "999"\n`;
+        } else {
+          map += `"message" "Trigger Activated"\n`;
+        }
+        map += `"zone_type" "${ent.properties.zoneType || 'death_zone'}"\n`;
+
+        // 6 bounding planes for the trigger volume
+        map += `{\n`;
+        // +Z (top)
+        map += `( ${fmt(minX)} ${fmt(maxY)} ${fmt(maxZ)} ) ( ${fmt(maxX)} ${fmt(maxY)} ${fmt(maxZ)} ) ( ${fmt(maxX)} ${fmt(minY)} ${fmt(maxZ)} ) trigger 0 0 0 1.0 1.0\n`;
+        // -Z (bottom)
+        map += `( ${fmt(minX)} ${fmt(minY)} ${fmt(minZ)} ) ( ${fmt(maxX)} ${fmt(minY)} ${fmt(minZ)} ) ( ${fmt(maxX)} ${fmt(maxY)} ${fmt(minZ)} ) trigger 0 0 0 1.0 1.0\n`;
+        // +Y (north)
+        map += `( ${fmt(minX)} ${fmt(maxY)} ${fmt(maxZ)} ) ( ${fmt(minX)} ${fmt(maxY)} ${fmt(minZ)} ) ( ${fmt(maxX)} ${fmt(maxY)} ${fmt(minZ)} ) trigger 0 0 0 1.0 1.0\n`;
+        // -Y (south)
+        map += `( ${fmt(maxX)} ${fmt(minY)} ${fmt(maxZ)} ) ( ${fmt(maxX)} ${fmt(minY)} ${fmt(minZ)} ) ( ${fmt(minX)} ${fmt(minY)} ${fmt(minZ)} ) trigger 0 0 0 1.0 1.0\n`;
+        // +X (east)
+        map += `( ${fmt(maxX)} ${fmt(maxY)} ${fmt(maxZ)} ) ( ${fmt(maxX)} ${fmt(maxY)} ${fmt(minZ)} ) ( ${fmt(maxX)} ${fmt(minY)} ${fmt(minZ)} ) trigger 0 0 0 1.0 1.0\n`;
+        // -X (west)
+        map += `( ${fmt(minX)} ${fmt(minY)} ${fmt(maxZ)} ) ( ${fmt(minX)} ${fmt(minY)} ${fmt(minZ)} ) ( ${fmt(minX)} ${fmt(maxY)} ${fmt(minZ)} ) trigger 0 0 0 1.0 1.0\n`;
+        map += `}\n`;
+
+        map += `}\n`;
+        entIndex++;
+      }
+    }
+
+    return map;
   }
 
   /**

@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { Editor } from '../core/Editor';
 import type { ClipMode, CSGMode, SelectionMode, ShapeType, TransformTool, ViewportId } from '../core/types';
 import type { PolyBrushHUDData } from '../core/PolyBrushTool';
+import logoUrl from '../assets/logo.png';
 
 export class UIManager {
   private editor: Editor | null = null;
@@ -32,11 +33,7 @@ export class UIManager {
         <header class="pb-topbar">
           <div class="pb-brand">
             <div class="pb-logo-icon">
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
-                <polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline>
-                <line x1="12" y1="22.08" x2="12" y2="12"></line>
-              </svg>
+              <img src="${logoUrl}" alt="Voskel Logo" class="pb-logo-img" />
             </div>
             <div class="pb-brand-text">
               <span class="pb-title">VOSKEL</span>
@@ -199,6 +196,10 @@ export class UIManager {
                 <span class="pb-caret">▼</span>
               </button>
               <div id="pb-export-dropdown" class="pb-dropdown-content">
+                <div class="pb-dropdown-item" id="pb-export-map">
+                  <span class="pb-drop-title">Export Quake MAP (.map)</span>
+                  <span class="pb-drop-desc">For TrenchBroom, Qodot, Godot</span>
+                </div>
                 <div class="pb-dropdown-item" id="pb-export-obj">
                   <span class="pb-drop-title">Export OBJ (.obj)</span>
                   <span class="pb-drop-desc">For Unity, Unreal, Blender</span>
@@ -1382,6 +1383,7 @@ export class UIManager {
       exportDrop.classList.remove('show');
     });
 
+    this.container.querySelector('#pb-export-map')!.addEventListener('click', () => this.editor?.exportMAP());
     this.container.querySelector('#pb-export-obj')!.addEventListener('click', () => this.editor?.exportOBJ());
     this.container.querySelector('#pb-export-gltf')!.addEventListener('click', () => this.editor?.exportGLTF());
     this.container.querySelector('#pb-save-json')!.addEventListener('click', () => this.editor?.saveSceneToJSON());

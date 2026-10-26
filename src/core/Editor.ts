@@ -693,6 +693,12 @@ export class Editor {
     this.toast(`Exported level (${this.meshes.length} meshes, ${this.entities.length} entities) to .OBJ`, 'success');
   }
 
+  public exportMAP(scale = 32.0): void {
+    const mapData = ExportManager.exportToMAP(this.meshes, this.entities, scale);
+    ExportManager.downloadFile('voskel_level.map', mapData, 'text/plain');
+    this.toast(`Exported level (${this.meshes.length} brushes, ${this.entities.length} entities) to Quake .map`, 'success');
+  }
+
   public async exportGLTF(): Promise<void> {
     try {
       const gltfData = await ExportManager.exportToGLTF(this.meshes, this.entities, true);
