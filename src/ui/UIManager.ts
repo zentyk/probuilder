@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { Editor } from '../core/Editor';
-import type { ClipMode, CSGMode, SelectionMode, ShapeType, TransformTool } from '../core/types';
+import type { ClipMode, CSGMode, SelectionMode, ShapeType, TransformTool, ViewportId } from '../core/types';
 
 export class UIManager {
   private editor: Editor | null = null;
@@ -152,6 +152,24 @@ export class UIManager {
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M21 7v6h-6"></path>
                 <path d="M3 17a9 9 0 0 1 9-9 9 9 0 0 1 6 2.3l3 2.7"></path>
+              </svg>
+            </button>
+          </div>
+
+          <div class="pb-divider"></div>
+
+          <!-- Viewport Layout Toggle (Single 3D vs 4-View Orthographic Quad Layout) -->
+          <div class="pb-btn-group pb-view-layout-group">
+            <button id="pb-layout-single" class="pb-btn pb-icon-btn active" title="Single Viewport (3D)">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="3" y="3" width="18" height="18" rx="2"></rect>
+              </svg>
+            </button>
+            <button id="pb-layout-quad" class="pb-btn pb-icon-btn" title="4-View Orthographic Layout (Shift+Z / Ctrl+4) - Top, Front, Side, 3D">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="3" y="3" width="18" height="18" rx="2"></rect>
+                <line x1="12" y1="3" x2="12" y2="21"></line>
+                <line x1="3" y1="12" x2="21" y2="12"></line>
               </svg>
             </button>
           </div>
@@ -529,6 +547,53 @@ export class UIManager {
               <button id="pb-exit-playtest-btn" class="pb-btn pb-btn-sm">Exit Playtest</button>
             </div>
 
+            <!-- Quad Viewports Overlay (Hammer / TrenchBroom 4-View Layout) -->
+            <div id="pb-quad-overlay" class="pb-quad-overlay" style="display: none;">
+              <!-- Top-Left: Top (X/Z) -->
+              <div class="pb-viewport-pane pane-top" data-vp="top">
+                <div class="pb-vp-header">
+                  <span class="pb-vp-badge top-badge"><span class="pb-vp-dot top-dot"></span> TOP (X/Z)</span>
+                  <div class="pb-vp-actions">
+                    <button class="pb-vp-btn pb-vp-shading-btn active" data-vp="top" title="Toggle Wireframe / Shaded">Wire</button>
+                    <button class="pb-vp-btn pb-vp-max-btn" data-vp="top" title="Maximize Viewport (Shift+Z)">⛶</button>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Top-Right: 3D Perspective -->
+              <div class="pb-viewport-pane pane-perspective" data-vp="perspective">
+                <div class="pb-vp-header">
+                  <span class="pb-vp-badge pers-badge"><span class="pb-vp-dot pers-dot"></span> 3D PERSPECTIVE</span>
+                  <div class="pb-vp-actions">
+                    <button class="pb-vp-btn pb-vp-shading-btn" data-vp="perspective" title="Toggle Wireframe / Shaded">Shaded</button>
+                    <button class="pb-vp-btn pb-vp-max-btn" data-vp="perspective" title="Maximize Viewport (Shift+Z)">⛶</button>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Bottom-Left: Front (X/Y) -->
+              <div class="pb-viewport-pane pane-front" data-vp="front">
+                <div class="pb-vp-header">
+                  <span class="pb-vp-badge front-badge"><span class="pb-vp-dot front-dot"></span> FRONT (X/Y)</span>
+                  <div class="pb-vp-actions">
+                    <button class="pb-vp-btn pb-vp-shading-btn active" data-vp="front" title="Toggle Wireframe / Shaded">Wire</button>
+                    <button class="pb-vp-btn pb-vp-max-btn" data-vp="front" title="Maximize Viewport (Shift+Z)">⛶</button>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Bottom-Right: Side (Y/Z) -->
+              <div class="pb-viewport-pane pane-side" data-vp="side">
+                <div class="pb-vp-header">
+                  <span class="pb-vp-badge side-badge"><span class="pb-vp-dot side-dot"></span> SIDE (Y/Z)</span>
+                  <div class="pb-vp-actions">
+                    <button class="pb-vp-btn pb-vp-shading-btn active" data-vp="side" title="Toggle Wireframe / Shaded">Wire</button>
+                    <button class="pb-vp-btn pb-vp-max-btn" data-vp="side" title="Maximize Viewport (Shift+Z)">⛶</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
             <!-- Viewport Bottom Status Bar -->
             <div class="pb-viewport-footer">
               <div class="pb-footer-left">
@@ -541,6 +606,7 @@ export class UIManager {
                 <span class="pb-shortcut-pill"><kbd>Shift+E</kbd> Extrude</span>
                 <span class="pb-shortcut-pill"><kbd>Shift+X</kbd> Clip</span>
                 <span class="pb-shortcut-pill"><kbd>Ctrl+Shift+C</kbd> Carve</span>
+                <span class="pb-shortcut-pill"><kbd>Shift+Z</kbd> 4-View</span>
                 <span class="pb-shortcut-pill"><kbd>P</kbd> Playtest</span>
               </div>
               <div class="pb-footer-right">
@@ -1621,6 +1687,9 @@ export class UIManager {
 
     // Setup CSG Tool Events & HUD
     this.setupCSGToolEvents();
+
+    // Setup Multi-View Orthographic Events & HUD
+    this.setupViewportEvents();
   }
 
   private setupClipToolEvents(): void {
@@ -1816,6 +1885,87 @@ export class UIManager {
       if (csgBtn) {
         csgBtn.classList.toggle('active', state.isActive);
       }
+    };
+  }
+
+  private setupViewportEvents(): void {
+    if (!this.editor) return;
+
+    // Single layout button in top bar
+    this.container.querySelector('#pb-layout-single')?.addEventListener('click', () => {
+      this.editor?.setLayoutMode('single');
+    });
+
+    // Quad layout button in top bar
+    this.container.querySelector('#pb-layout-quad')?.addEventListener('click', () => {
+      this.editor?.setLayoutMode('quad');
+    });
+
+    // Maximize buttons in each viewport header
+    this.container.querySelectorAll('.pb-vp-max-btn').forEach((btn) => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const vpId = btn.getAttribute('data-vp') as ViewportId;
+        if (vpId) {
+          this.editor?.toggleMaximizeViewport(vpId);
+        }
+      });
+    });
+
+    // Shading toggle buttons in each viewport header
+    this.container.querySelectorAll('.pb-vp-shading-btn').forEach((btn) => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const vpId = btn.getAttribute('data-vp') as ViewportId;
+        if (vpId) {
+          this.editor?.viewportManager.toggleShading(vpId);
+        }
+      });
+    });
+
+    // Viewport Manager State Callback
+    this.editor.viewportManager.onStateChanged = (state) => {
+      const isQuad = state.layoutMode === 'quad' || state.maximizedViewportId !== null;
+      const overlay = this.container.querySelector('#pb-quad-overlay') as HTMLElement;
+      if (overlay) {
+        overlay.style.display = isQuad ? 'grid' : 'none';
+        overlay.classList.toggle('is-maximized', state.maximizedViewportId !== null);
+      }
+
+      // Sync layout switcher buttons
+      const btnSingle = this.container.querySelector('#pb-layout-single');
+      const btnQuad = this.container.querySelector('#pb-layout-quad');
+      if (btnSingle) btnSingle.classList.toggle('active', state.layoutMode === 'single' && state.maximizedViewportId === null);
+      if (btnQuad) btnQuad.classList.toggle('active', state.layoutMode === 'quad' || state.maximizedViewportId !== null);
+
+      // Sync shading badges
+      const shading = this.editor!.viewportManager.shadingModes;
+      this.container.querySelectorAll('.pb-vp-shading-btn').forEach((btn) => {
+        const vpId = btn.getAttribute('data-vp') as ViewportId;
+        if (vpId && shading[vpId]) {
+          const isWire = shading[vpId] === 'wireframe';
+          btn.textContent = isWire ? 'Wire' : 'Shaded';
+          btn.classList.toggle('active', isWire);
+        }
+      });
+
+      // Sync maximize button icons
+      this.container.querySelectorAll('.pb-vp-max-btn').forEach((btn) => {
+        const vpId = btn.getAttribute('data-vp') as ViewportId;
+        const isThisMax = state.maximizedViewportId === vpId;
+        btn.textContent = isThisMax ? '❐' : '⛶';
+        btn.setAttribute('title', isThisMax ? 'Restore 4-View Layout (Shift+Z)' : 'Maximize Viewport (Shift+Z)');
+      });
+
+      // Update pane maximized visibility
+      this.container.querySelectorAll('.pb-viewport-pane').forEach((pane) => {
+        const vpId = pane.getAttribute('data-vp') as ViewportId;
+        if (state.maximizedViewportId !== null) {
+          (pane as HTMLElement).style.display = state.maximizedViewportId === vpId ? 'flex' : 'none';
+        } else {
+          (pane as HTMLElement).style.display = 'flex';
+        }
+      });
     };
   }
 
@@ -2063,9 +2213,20 @@ export class UIManager {
     const csgHud = this.container.querySelector('#pb-csg-hud') as HTMLElement;
     if (csgHud) csgHud.style.display = isCSG ? 'flex' : 'none';
 
+    // Viewport Layout Sync
+    const isQuad = this.editor.viewportManager.layoutMode === 'quad' || this.editor.viewportManager.maximizedViewportId !== null;
+    const btnSingle = this.container.querySelector('#pb-layout-single');
+    const btnQuad = this.container.querySelector('#pb-layout-quad');
+    if (btnSingle) btnSingle.classList.toggle('active', this.editor.viewportManager.layoutMode === 'single' && this.editor.viewportManager.maximizedViewportId === null);
+    if (btnQuad) btnQuad.classList.toggle('active', isQuad);
+
     // Grid snap footer
     const coordsInfo = this.container.querySelector('#pb-coords-info')!;
-    coordsInfo.textContent = `Snap: ${snapping.enabled ? snapping.translate + 'm' : 'OFF'}`;
+    if (isQuad) {
+      coordsInfo.textContent = `${this.editor.viewportManager.hoveredViewportId.toUpperCase()} • Snap: ${snapping.enabled ? snapping.translate + 'm' : 'OFF'}`;
+    } else {
+      coordsInfo.textContent = `Snap: ${snapping.enabled ? snapping.translate + 'm' : 'OFF'}`;
+    }
   }
 
   private updateHierarchy(): void {

@@ -14,8 +14,9 @@ import { BrushTool } from './BrushTool';
 import { TextureTool } from './TextureTool';
 import { ClipTool } from './ClipTool';
 import { CSGTool } from './CSGTool';
+import { ViewportManager } from './ViewportManager';
 import { Entity } from './Entity';
-import type { EntityType, SelectionMode, ShapeType, TransformSpace, TransformTool } from './types';
+import type { EntityType, LayoutMode, SelectionMode, ShapeType, TransformSpace, TransformTool, ViewportId } from './types';
 
 export class Editor {
   public container: HTMLElement;
@@ -36,6 +37,7 @@ export class Editor {
   public textureTool: TextureTool;
   public clipTool: ClipTool;
   public csgTool: CSGTool;
+  public viewportManager: ViewportManager;
 
   private gridHelper: THREE.GridHelper;
   private clock = new THREE.Clock();
@@ -93,6 +95,7 @@ export class Editor {
     this.textureTool = new TextureTool(this);
     this.clipTool = new ClipTool(this);
     this.csgTool = new CSGTool(this);
+    this.viewportManager = new ViewportManager(this);
 
     this.setupViewCube();
     this.setupEventListeners();
@@ -829,14 +832,15 @@ export class Editor {
     dom.addEventListener('pointermove', (e) => {
       if (this.playtestController.isActive) return;
 
+      const vpInfo = this.viewportManager.handlePointerMove(e);
+      const ndcX = vpInfo.ndcX;
+      const ndcY = vpInfo.ndcY;
+      const activeCam = vpInfo.camera;
+
       if (this.clipTool.isActive) {
         this.clipTool.handlePointerMove(e.clientX, e.clientY);
         return;
       }
-
-      const rect = dom.getBoundingClientRect();
-      const ndcX = ((e.clientX - rect.left) / rect.width) * 2 - 1;
-      const ndcY = -((e.clientY - rect.top) / rect.height) * 2 + 1;
 
       if (this.brushTool.isActive) {
         this.brushTool.handlePointerMove(e, ndcX, ndcY);
@@ -844,11 +848,28 @@ export class Editor {
       }
 
       if (this.gizmoManager.isBusy() || this.gizmoManager.transformControls.axis !== null) return;
-      this.selectionManager.handlePointerMove(ndcX, ndcY, this.camera, this.meshes, this.entities);
+      this.selectionManager.handlePointerMove(ndcX, ndcY, activeCam, this.meshes, this.entities);
     });
 
     dom.addEventListener('pointerdown', (e) => {
       if (this.playtestController.isActive) return;
+
+      // 2D Viewport Pan (Right-click or Middle-click in Orthographic views)
+      if (this.viewportManager.handlePointerDown(e)) {
+        this.orbitControls.enabled = false;
+        this.isPointerDown = false;
+        return;
+      }
+
+      const under = this.viewportManager.getViewportUnderPointer(e.clientX, e.clientY);
+      const isOrtho = under.viewportId !== 'perspective';
+      if (isOrtho) {
+        this.orbitControls.enabled = false;
+      } else {
+        if (!this.gizmoManager.isBusy() && this.gizmoManager.transformControls.axis === null) {
+          this.orbitControls.enabled = true;
+        }
+      }
 
       // CSG Tool: Picking Target or Cutter
       if (this.csgTool.isActive && this.csgTool.pickingMode !== 'none' && e.button === 0) {
@@ -899,7 +920,9 @@ export class Editor {
     });
 
     dom.addEventListener('pointerup', (e) => {
-      if (!this.gizmoManager.isBusy()) {
+      this.viewportManager.handlePointerUp();
+      const under = this.viewportManager.getViewportUnderPointer(e.clientX, e.clientY);
+      if (under.viewportId === 'perspective' && !this.gizmoManager.isBusy()) {
         this.orbitControls.enabled = true;
       }
 
@@ -946,6 +969,11 @@ export class Editor {
     });
 
     dom.addEventListener('wheel', (e) => {
+      if (this.viewportManager.handleWheel(e)) {
+        e.preventDefault();
+        this.notifyUI();
+        return;
+      }
       if (this.brushTool.isActive) {
         e.preventDefault();
         this.brushTool.handleWheel(e);
@@ -986,6 +1014,7 @@ export class Editor {
       this.camera.aspect = width / height;
       this.camera.updateProjectionMatrix();
       this.renderer.setSize(width, height);
+      this.viewportManager.updateCameraProjections();
     });
 
     // Keyboard Shortcuts
@@ -1075,6 +1104,20 @@ export class Editor {
         this.toggleCSGTool();
       }
 
+      // Viewport Maximize / Quad Toggle: Shift+Z (Hammer / TrenchBroom Viewport Toggle)
+      if (e.shiftKey && (e.code === 'KeyZ' || e.key.toUpperCase() === 'Z') && !e.ctrlKey) {
+        e.preventDefault();
+        this.viewportManager.toggleMaximize();
+        this.notifyUI();
+      }
+
+      // Quad Layout Toggle: Ctrl+4
+      if (e.ctrlKey && e.key === '4') {
+        e.preventDefault();
+        this.viewportManager.toggleLayoutMode();
+        this.notifyUI();
+      }
+
       // Clip Tool: Shift+X (Hammer Knife Tool / Slicing Plane)
       if (e.shiftKey && (e.code === 'KeyX' || e.key.toUpperCase() === 'X')) {
         e.preventDefault();
@@ -1140,12 +1183,29 @@ export class Editor {
     if (this.playtestController.isActive) {
       this.playtestController.update(dt);
     } else {
-      this.orbitControls.update();
+      if (this.viewportManager.activeViewportId === 'perspective' || this.viewportManager.layoutMode === 'quad') {
+        this.orbitControls.update();
+      }
     }
 
-    this.renderer.render(this.scene, this.camera);
+    this.viewportManager.render(this.scene, this.renderer);
     this.viewCube.update();
   };
+
+  public setLayoutMode(mode: LayoutMode): void {
+    this.viewportManager.setLayoutMode(mode);
+    this.notifyUI();
+  }
+
+  public toggleQuadLayout(): void {
+    this.viewportManager.toggleLayoutMode();
+    this.notifyUI();
+  }
+
+  public toggleMaximizeViewport(id?: ViewportId): void {
+    this.viewportManager.toggleMaximize(id);
+    this.notifyUI();
+  }
 
   public notifyUI(): void {
     if (this.onStateChanged) this.onStateChanged();

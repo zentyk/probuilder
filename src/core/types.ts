@@ -130,3 +130,16 @@ export interface CSGToolState {
   pickingMode: 'none' | 'target' | 'cutter';
 }
 
+export type ViewportId = 'top' | 'perspective' | 'front' | 'side';
+export type LayoutMode = 'single' | 'quad';
+export type ShadingMode = 'shaded' | 'wireframe';
+
+export interface ViewportState {
+  layoutMode: LayoutMode;
+  activeViewportId: ViewportId;
+  maximizedViewportId: ViewportId | null;
+  cursorCoords: {
+    viewportId: ViewportId;
+    coordsText: string;
+  } | null;
+}

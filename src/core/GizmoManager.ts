@@ -47,6 +47,12 @@ export class GizmoManager {
     this.updateSnapping();
   }
 
+  public setCamera(camera: THREE.Camera): void {
+    if (this.transformControls.camera !== camera) {
+      this.transformControls.camera = camera;
+    }
+  }
+
   public setTool(tool: TransformTool): void {
     this.tool = tool;
     this.transformControls.setMode(tool);
