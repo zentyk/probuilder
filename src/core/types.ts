@@ -118,3 +118,15 @@ export interface EntityData {
 
 export type ClipMode = 'keep_front' | 'keep_back' | 'split_both';
 
+export type CSGMode = 'subtract' | 'union' | 'intersect';
+
+export interface CSGToolState {
+  isActive: boolean;
+  mode: CSGMode;
+  targetMeshName: string | null;
+  cutterMeshName: string | null;
+  intersectingCount: number;
+  deleteCutter: boolean;
+  pickingMode: 'none' | 'target' | 'cutter';
+}
+

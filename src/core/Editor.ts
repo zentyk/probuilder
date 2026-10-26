@@ -13,6 +13,7 @@ import { ExportManager } from './ExportManager';
 import { BrushTool } from './BrushTool';
 import { TextureTool } from './TextureTool';
 import { ClipTool } from './ClipTool';
+import { CSGTool } from './CSGTool';
 import { Entity } from './Entity';
 import type { EntityType, SelectionMode, ShapeType, TransformSpace, TransformTool } from './types';
 
@@ -34,6 +35,7 @@ export class Editor {
   public brushTool: BrushTool;
   public textureTool: TextureTool;
   public clipTool: ClipTool;
+  public csgTool: CSGTool;
 
   private gridHelper: THREE.GridHelper;
   private clock = new THREE.Clock();
@@ -90,6 +92,7 @@ export class Editor {
     this.brushTool = new BrushTool(this);
     this.textureTool = new TextureTool(this);
     this.clipTool = new ClipTool(this);
+    this.csgTool = new CSGTool(this);
 
     this.setupViewCube();
     this.setupEventListeners();
@@ -847,6 +850,15 @@ export class Editor {
     dom.addEventListener('pointerdown', (e) => {
       if (this.playtestController.isActive) return;
 
+      // CSG Tool: Picking Target or Cutter
+      if (this.csgTool.isActive && this.csgTool.pickingMode !== 'none' && e.button === 0) {
+        if (this.csgTool.handlePointerDown(e.clientX, e.clientY)) {
+          this.orbitControls.enabled = false;
+          this.isPointerDown = false;
+          return;
+        }
+      }
+
       // Clip Tool: Place cutting plane points on left-click
       if (this.clipTool.isActive && e.button === 0) {
         if (this.clipTool.handlePointerDown(e.clientX, e.clientY)) {
@@ -991,11 +1003,14 @@ export class Editor {
         else this.setSelectionMode('brush');
       }
 
-      // Escape: cancel clip tool, cancel brush drag, close texture inspector, or exit brush mode
+      // Escape: cancel clip tool, cancel csg tool, cancel brush drag, close texture inspector, or exit brush mode
       if (e.key === 'Escape') {
         if (this.clipTool.isActive) {
           e.preventDefault();
           this.clipTool.deactivate();
+        } else if (this.csgTool.isActive) {
+          e.preventDefault();
+          this.csgTool.deactivate();
         } else if (this.brushTool.isDragging) {
           e.preventDefault();
           this.brushTool.cancelDrag();
@@ -1008,10 +1023,18 @@ export class Editor {
         }
       }
 
-      // Enter: execute slice if ClipTool is active
-      if (e.code === 'Enter' && this.clipTool.isActive) {
-        e.preventDefault();
-        this.clipTool.executeCut();
+      // Enter: execute slice if ClipTool is active, or CSG Carve if CSGTool is active
+      if (e.code === 'Enter') {
+        if (this.clipTool.isActive) {
+          e.preventDefault();
+          this.clipTool.executeCut();
+          return;
+        }
+        if (this.csgTool.isActive) {
+          e.preventDefault();
+          this.csgTool.execute();
+          return;
+        }
       }
 
       // Tool Shortcuts: W (Translate), E (Rotate), R (Scale)
@@ -1044,6 +1067,12 @@ export class Editor {
         } else {
           this.hollowSelected();
         }
+      }
+
+      // CSG Carve / Booleans: Ctrl+Shift+C (Hammer Carve)
+      if (e.ctrlKey && e.shiftKey && (e.code === 'KeyC' || e.key.toUpperCase() === 'C')) {
+        e.preventDefault();
+        this.toggleCSGTool();
       }
 
       // Clip Tool: Shift+X (Hammer Knife Tool / Slicing Plane)
@@ -1089,6 +1118,18 @@ export class Editor {
   public toggleClipTool(): void {
     this.clipTool.toggle();
     this.notifyUI();
+  }
+
+  public toggleCSGTool(): void {
+    this.csgTool.toggle();
+    this.notifyUI();
+  }
+
+  public carveSelected(): void {
+    if (!this.csgTool.isActive) {
+      this.csgTool.activate();
+    }
+    this.csgTool.execute();
   }
 
   private animate = (): void => {

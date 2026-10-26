@@ -1,6 +1,7 @@
 import * as THREE from 'three';
+import { Evaluator, Brush, SUBTRACTION, ADDITION, INTERSECTION } from 'three-bvh-csg';
 import { EditableMesh } from './EditableMesh';
-import { makeEdgeKey, type ClipMode } from './types';
+import { makeEdgeKey, type ClipMode, type CSGMode } from './types';
 
 export class GeometryOperations {
   /**
@@ -795,5 +796,230 @@ export class GeometryOperations {
     const sideB = mode !== 'keep_front' ? buildMesh('cut_b', polysB) : null;
 
     return { sideA, sideB };
+  }
+
+  /**
+   * CSG Constructive Solid Geometry Boolean Operations:
+   * - 'subtract': Carve/subtract cutterMesh from targetMesh (punches doorway/window)
+   * - 'union': Fuse/merge targetMesh and cutterMesh into one solid
+   * - 'intersect': Keep only overlapping volume between targetMesh and cutterMesh
+   */
+  public static booleanOperation(
+    targetMesh: EditableMesh,
+    cutterMesh: EditableMesh,
+    mode: CSGMode = 'subtract'
+  ): EditableMesh | null {
+    targetMesh.group.updateMatrixWorld(true);
+    cutterMesh.group.updateMatrixWorld(true);
+
+    const geomA = targetMesh.surfaceMesh.geometry.clone().toNonIndexed();
+    const geomB = cutterMesh.surfaceMesh.geometry.clone().toNonIndexed();
+
+    const brushA = new Brush(geomA);
+    brushA.position.copy(targetMesh.group.position);
+    brushA.quaternion.copy(targetMesh.group.quaternion);
+    brushA.scale.copy(targetMesh.group.scale);
+    brushA.updateMatrixWorld(true);
+
+    const brushB = new Brush(geomB);
+    brushB.position.copy(cutterMesh.group.position);
+    brushB.quaternion.copy(cutterMesh.group.quaternion);
+    brushB.scale.copy(cutterMesh.group.scale);
+    brushB.updateMatrixWorld(true);
+
+    let csgOp = SUBTRACTION;
+    if (mode === 'union') {
+      csgOp = ADDITION;
+    } else if (mode === 'intersect') {
+      csgOp = INTERSECTION;
+    }
+
+    const evaluator = new Evaluator();
+    evaluator.useGroups = false;
+    const csgResult = evaluator.evaluate(brushA, brushB, csgOp);
+
+    geomA.dispose();
+    geomB.dispose();
+
+    const nonIndexed = csgResult.geometry.toNonIndexed();
+    const posAttr = nonIndexed.attributes.position;
+    const triCount = posAttr.count / 3;
+
+    if (triCount === 0) {
+      nonIndexed.dispose();
+      csgResult.geometry.dispose();
+      return null;
+    }
+
+    const opName = mode === 'subtract' ? 'Carved' : mode === 'union' ? 'Merged' : 'Intersect';
+    const newMesh = new EditableMesh(`${targetMesh.name}_${opName}`);
+    newMesh.group.position.copy(targetMesh.group.position);
+    newMesh.group.rotation.copy(targetMesh.group.rotation);
+    newMesh.group.scale.copy(targetMesh.group.scale);
+
+    // Vertex deduplication welding map
+    const verts: THREE.Vector3[] = [];
+    const vMap = new Map<string, number>();
+    const getOrCreateV = (x: number, y: number, z: number): number => {
+      const key = `${x.toFixed(4)},${y.toFixed(4)},${z.toFixed(4)}`;
+      if (vMap.has(key)) return vMap.get(key)!;
+      const idx = newMesh.addVertex(new THREE.Vector3(x, y, z));
+      verts.push(newMesh.vertices[idx]);
+      vMap.set(key, idx);
+      return idx;
+    };
+
+    // Precalculate world planes of cutter faces for material inheritance in subtraction
+    interface PlaneInfo {
+      plane: THREE.Plane;
+      matIndex: number;
+    }
+    const cutterPlanes: PlaneInfo[] = [];
+    const cutterWorldMat = cutterMesh.group.matrixWorld;
+    for (const f of cutterMesh.faces) {
+      if (f.vertexIndices.length < 3) continue;
+      const p0 = cutterMesh.vertices[f.vertexIndices[0]].clone().applyMatrix4(cutterWorldMat);
+      const p1 = cutterMesh.vertices[f.vertexIndices[1]].clone().applyMatrix4(cutterWorldMat);
+      const p2 = cutterMesh.vertices[f.vertexIndices[2]].clone().applyMatrix4(cutterWorldMat);
+      const norm = new THREE.Vector3().subVectors(p1, p0).cross(new THREE.Vector3().subVectors(p2, p0)).normalize();
+      if (norm.lengthSq() > 0.01) {
+        cutterPlanes.push({
+          plane: new THREE.Plane().setFromNormalAndCoplanarPoint(norm, p0),
+          matIndex: f.materialIndex ?? 0,
+        });
+      }
+    }
+
+    const defaultTargetMat = targetMesh.faces[0]?.materialIndex ?? 0;
+    const defaultCutterMat = cutterMesh.faces[0]?.materialIndex ?? defaultTargetMat;
+
+    // Collect valid non-degenerate triangles
+    interface TriData {
+      indices: [number, number, number];
+      normal: THREE.Vector3;
+      materialIndex: number;
+    }
+    const triangles: TriData[] = [];
+    const targetWorldMat = targetMesh.group.matrixWorld;
+
+    for (let i = 0; i < triCount; i++) {
+      const v0 = getOrCreateV(posAttr.getX(i * 3), posAttr.getY(i * 3), posAttr.getZ(i * 3));
+      const v1 = getOrCreateV(posAttr.getX(i * 3 + 1), posAttr.getY(i * 3 + 1), posAttr.getZ(i * 3 + 1));
+      const v2 = getOrCreateV(posAttr.getX(i * 3 + 2), posAttr.getY(i * 3 + 2), posAttr.getZ(i * 3 + 2));
+
+      if (v0 === v1 || v1 === v2 || v2 === v0) continue;
+
+      const p0 = verts[v0];
+      const p1 = verts[v1];
+      const p2 = verts[v2];
+      const norm = new THREE.Vector3().subVectors(p1, p0).cross(new THREE.Vector3().subVectors(p2, p0));
+      if (norm.lengthSq() < 1e-8) continue;
+      norm.normalize();
+
+      // Check material for this triangle
+      let mat = defaultTargetMat;
+      if (mode === 'subtract') {
+        const centerWorld = new THREE.Vector3().add(p0).add(p1).add(p2).divideScalar(3).applyMatrix4(targetWorldMat);
+        const normWorld = norm.clone().transformDirection(targetWorldMat).normalize();
+
+        // If the triangle lies on a cutter face plane, inherit cutter material (e.g. doorframe texture)
+        let isCutterCut = false;
+        for (const cp of cutterPlanes) {
+          const dist = Math.abs(cp.plane.distanceToPoint(centerWorld));
+          const dot = normWorld.dot(cp.plane.normal);
+          if (dist < 0.002 && dot < -0.85) {
+            mat = cp.matIndex;
+            isCutterCut = true;
+            break;
+          }
+        }
+        if (!isCutterCut && defaultCutterMat !== defaultTargetMat) {
+          const cutterBox = new THREE.Box3().setFromObject(cutterMesh.surfaceMesh);
+          if (cutterBox.containsPoint(centerWorld)) {
+            mat = defaultCutterMat;
+          }
+        }
+      } else if (mode === 'union') {
+        const centerWorld = new THREE.Vector3().add(p0).add(p1).add(p2).divideScalar(3).applyMatrix4(targetWorldMat);
+        const cutterBox = new THREE.Box3().setFromObject(cutterMesh.surfaceMesh);
+        if (cutterBox.containsPoint(centerWorld)) {
+          mat = defaultCutterMat;
+        }
+      }
+
+      triangles.push({ indices: [v0, v1, v2], normal: norm, materialIndex: mat });
+    }
+
+    // Helper: test if 4 indices form a strictly convex planar quad
+    const isConvexQuad = (indices: number[], normal: THREE.Vector3): boolean => {
+      const pts = indices.map((idx) => verts[idx]);
+      for (let k = 0; k < 4; k++) {
+        const a = pts[k];
+        const b = pts[(k + 1) % 4];
+        const c = pts[(k + 2) % 4];
+        const cp = new THREE.Vector3().subVectors(b, a).cross(new THREE.Vector3().subVectors(c, b));
+        if (cp.dot(normal) <= 1e-4) return false;
+      }
+      return true;
+    };
+
+    // Pairwise coplanar quad merging
+    const used = new Set<number>();
+    const facesToAdd: { indices: number[]; materialIndex: number }[] = [];
+
+    for (let i = 0; i < triangles.length; i++) {
+      if (used.has(i)) continue;
+      const tA = triangles[i];
+      let merged = false;
+
+      for (let j = i + 1; j < triangles.length; j++) {
+        if (used.has(j)) continue;
+        const tB = triangles[j];
+        if (tA.materialIndex !== tB.materialIndex) continue;
+        if (tA.normal.dot(tB.normal) < 0.999) continue;
+
+        // Check if triangles share an edge in opposite directions
+        for (let eA = 0; eA < 3; eA++) {
+          const a0 = tA.indices[eA];
+          const a1 = tA.indices[(eA + 1) % 3];
+          const a2 = tA.indices[(eA + 2) % 3];
+
+          for (let eB = 0; eB < 3; eB++) {
+            const b0 = tB.indices[eB];
+            const b1 = tB.indices[(eB + 1) % 3];
+            const b2 = tB.indices[(eB + 2) % 3];
+
+            if (a0 === b1 && a1 === b0) {
+              const quad = [a0, b2, a1, a2];
+              if (isConvexQuad(quad, tA.normal)) {
+                facesToAdd.push({ indices: quad, materialIndex: tA.materialIndex });
+                used.add(i);
+                used.add(j);
+                merged = true;
+                break;
+              }
+            }
+          }
+          if (merged) break;
+        }
+        if (merged) break;
+      }
+
+      if (!merged) {
+        facesToAdd.push({ indices: [...tA.indices], materialIndex: tA.materialIndex });
+        used.add(i);
+      }
+    }
+
+    for (const f of facesToAdd) {
+      newMesh.addFace(f.indices, f.materialIndex);
+    }
+
+    newMesh.rebuildGeometry();
+
+    nonIndexed.dispose();
+    csgResult.geometry.dispose();
+
+    return newMesh;
   }
 }

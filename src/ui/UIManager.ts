@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { Editor } from '../core/Editor';
-import type { ClipMode, SelectionMode, ShapeType, TransformTool } from '../core/types';
+import type { ClipMode, CSGMode, SelectionMode, ShapeType, TransformTool } from '../core/types';
 
 export class UIManager {
   private editor: Editor | null = null;
@@ -450,6 +450,14 @@ export class UIManager {
                   <span class="pb-action-name">Make Hollow</span>
                   <span class="pb-key">Ctrl+H</span>
                 </button>
+                <button id="pb-tool-csg" class="pb-action-btn pb-btn-accent-glow" title="CSG Carve / Booleans (Ctrl+Shift+C) - Hammer Carve Doorways & Windows">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="3" y="3" width="13" height="13" rx="1.5"></rect>
+                    <rect x="9" y="9" width="12" height="12" rx="1.5" stroke-dasharray="2 2"></rect>
+                  </svg>
+                  <span class="pb-action-name">CSG Carve</span>
+                  <span class="pb-key">Ctrl+Shift+C</span>
+                </button>
                 <button id="pb-tool-duplicate" class="pb-action-btn" title="Duplicate Selected Object">
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
@@ -532,6 +540,7 @@ export class UIManager {
                 <span class="pb-shortcut-pill"><kbd>G</kbd> Snap</span>
                 <span class="pb-shortcut-pill"><kbd>Shift+E</kbd> Extrude</span>
                 <span class="pb-shortcut-pill"><kbd>Shift+X</kbd> Clip</span>
+                <span class="pb-shortcut-pill"><kbd>Ctrl+Shift+C</kbd> Carve</span>
                 <span class="pb-shortcut-pill"><kbd>P</kbd> Playtest</span>
               </div>
               <div class="pb-footer-right">
@@ -1023,6 +1032,84 @@ export class UIManager {
               </button>
               <button id="pb-clip-btn-reset" class="pb-btn pb-btn-sm pb-btn-secondary" title="Clear Points and restart">
                 Reset Points
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Floating CSG Booleans & Carve Tool HUD (Hammer Carve / Ctrl+Shift+C) -->
+        <div id="pb-csg-hud" class="pb-csg-hud" style="display: none;">
+          <div class="pb-csg-hud-header">
+            <div class="pb-csg-hud-title-group">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#f97316" stroke-width="2">
+                <rect x="3" y="3" width="13" height="13" rx="1.5"></rect>
+                <rect x="9" y="9" width="12" height="12" rx="1.5" stroke-dasharray="2 2"></rect>
+              </svg>
+              <span class="pb-csg-hud-title">CSG Carve & Booleans</span>
+              <span class="pb-key">Ctrl+Shift+C</span>
+            </div>
+            <button id="pb-csg-close-btn" class="pb-modal-close-btn" title="Exit CSG Tool (Esc)">✕</button>
+          </div>
+
+          <div class="pb-csg-hud-body">
+            <!-- Target & Cutter Assignment Row -->
+            <div class="pb-csg-selection-box">
+              <div class="pb-csg-mesh-slot target-slot">
+                <div class="pb-csg-slot-label"><span class="pb-csg-dot target-dot"></span> Target (Base Wall):</div>
+                <div class="pb-csg-slot-content">
+                  <span id="pb-csg-target-name" class="pb-csg-mesh-name">None selected</span>
+                  <button id="pb-csg-pick-target" class="pb-btn pb-btn-xs pb-btn-secondary" title="Click to pick target from 3D viewport">Pick</button>
+                </div>
+              </div>
+
+              <button id="pb-csg-swap-btn" class="pb-csg-swap-btn" title="Swap Target and Cutter (⇄)">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M7 16V4M7 4L3 8M7 4L11 8M17 8V20M17 20L21 16M17 20L13 16"></path>
+                </svg>
+              </button>
+
+              <div class="pb-csg-mesh-slot cutter-slot">
+                <div class="pb-csg-slot-label"><span class="pb-csg-dot cutter-dot"></span> Cutter (Hole / Brush):</div>
+                <div class="pb-csg-slot-content">
+                  <span id="pb-csg-cutter-name" class="pb-csg-mesh-name">None selected</span>
+                  <button id="pb-csg-pick-cutter" class="pb-btn pb-btn-xs pb-btn-secondary" title="Click to pick cutter from 3D viewport">Pick</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Intersecting meshes info -->
+            <div id="pb-csg-guidance" class="pb-csg-guidance">
+              Select or drag a cutter brush through a wall...
+            </div>
+
+            <!-- Operation Selector Chips -->
+            <div class="pb-csg-mode-row">
+              <span class="pb-csg-row-label">Operation:</span>
+              <div class="pb-preset-chips pb-csg-mode-chips">
+                <button type="button" class="pb-chip active" data-csg-mode="subtract" title="Carve / Subtract (Doorway, Window opening)">Carve (Subtract)</button>
+                <button type="button" class="pb-chip" data-csg-mode="union" title="Fuse / Union (Merge into single solid)">Union (Add)</button>
+                <button type="button" class="pb-chip" data-csg-mode="intersect" title="Intersect (Keep common overlapping volume)">Intersect</button>
+              </div>
+            </div>
+
+            <!-- Checkbox Option: Delete Cutter Brush after Carve -->
+            <div class="pb-csg-option-row">
+              <label class="pb-csg-checkbox-label">
+                <input type="checkbox" id="pb-csg-delete-cutter" checked>
+                <span>Delete Cutter Brush after Carve</span>
+              </label>
+            </div>
+
+            <!-- Actions Bar -->
+            <div class="pb-csg-actions-row">
+              <button id="pb-csg-btn-apply" class="pb-btn pb-btn-sm pb-btn-accent" title="Apply CSG Operation (Enter)">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <polyline points="20 6 9 17 4 12"></polyline>
+                </svg>
+                <span>Punch Carve (Enter)</span>
+              </button>
+              <button id="pb-csg-btn-auto-carve" class="pb-btn pb-btn-sm pb-btn-secondary" title="Automatically carve all intersecting meshes">
+                Carve All Intersecting
               </button>
             </div>
           </div>
@@ -1531,6 +1618,9 @@ export class UIManager {
 
     // Setup Clip Tool Events & HUD
     this.setupClipToolEvents();
+
+    // Setup CSG Tool Events & HUD
+    this.setupCSGToolEvents();
   }
 
   private setupClipToolEvents(): void {
@@ -1603,6 +1693,128 @@ export class UIManager {
       const clipBtn = this.container.querySelector('#pb-tool-clip');
       if (clipBtn) {
         clipBtn.classList.toggle('active', state.isActive);
+      }
+    };
+  }
+
+  private setupCSGToolEvents(): void {
+    if (!this.editor) return;
+
+    // Toggle button in left toolbar
+    this.container.querySelector('#pb-tool-csg')?.addEventListener('click', () => {
+      this.editor?.toggleCSGTool();
+    });
+
+    // Close button
+    this.container.querySelector('#pb-csg-close-btn')?.addEventListener('click', () => {
+      this.editor?.csgTool.deactivate();
+      this.updateUI();
+    });
+
+    // Pick Target button
+    this.container.querySelector('#pb-csg-pick-target')?.addEventListener('click', () => {
+      if (this.editor?.csgTool.pickingMode === 'target') {
+        this.editor.csgTool.setPickingMode('none');
+      } else {
+        this.editor?.csgTool.setPickingMode('target');
+      }
+    });
+
+    // Pick Cutter button
+    this.container.querySelector('#pb-csg-pick-cutter')?.addEventListener('click', () => {
+      if (this.editor?.csgTool.pickingMode === 'cutter') {
+        this.editor.csgTool.setPickingMode('none');
+      } else {
+        this.editor?.csgTool.setPickingMode('cutter');
+      }
+    });
+
+    // Swap button
+    this.container.querySelector('#pb-csg-swap-btn')?.addEventListener('click', () => {
+      this.editor?.csgTool.swapTargetAndCutter();
+    });
+
+    // Mode chips
+    const modeChips = this.container.querySelectorAll('.pb-csg-mode-chips .pb-chip');
+    modeChips.forEach((chip) => {
+      chip.addEventListener('click', () => {
+        const mode = chip.getAttribute('data-csg-mode') as CSGMode;
+        if (mode && this.editor) {
+          this.editor.csgTool.setMode(mode);
+          modeChips.forEach((c) => c.classList.toggle('active', c === chip));
+        }
+      });
+    });
+
+    // Delete cutter checkbox
+    const deleteCutterCb = this.container.querySelector('#pb-csg-delete-cutter') as HTMLInputElement;
+    deleteCutterCb?.addEventListener('change', () => {
+      this.editor?.csgTool.setDeleteCutter(deleteCutterCb.checked);
+    });
+
+    // Apply button
+    this.container.querySelector('#pb-csg-btn-apply')?.addEventListener('click', () => {
+      this.editor?.csgTool.execute();
+      this.updateUI();
+    });
+
+    // Auto carve all intersecting button
+    this.container.querySelector('#pb-csg-btn-auto-carve')?.addEventListener('click', () => {
+      this.editor?.csgTool.carveAllIntersecting();
+      this.updateUI();
+    });
+
+    // State Callback
+    this.editor.csgTool.onStateChanged = (state) => {
+      const hud = this.container.querySelector('#pb-csg-hud') as HTMLElement;
+      if (!hud) return;
+
+      hud.style.display = state.isActive ? 'flex' : 'none';
+
+      const targetLabel = this.container.querySelector('#pb-csg-target-name')!;
+      targetLabel.textContent = state.targetMeshName || 'None (Click Pick)';
+
+      const cutterLabel = this.container.querySelector('#pb-csg-cutter-name')!;
+      cutterLabel.textContent = state.cutterMeshName || 'None (Click Pick)';
+
+      const guidance = this.container.querySelector('#pb-csg-guidance')!;
+      if (state.pickingMode === 'target') {
+        guidance.textContent = 'Click any mesh in the 3D viewport to set as Target';
+      } else if (state.pickingMode === 'cutter') {
+        guidance.textContent = 'Click any mesh in the 3D viewport to set as Cutter';
+      } else if (state.targetMeshName && state.cutterMeshName) {
+        if (state.mode === 'subtract') {
+          guidance.textContent = `Punches doorway/opening in [${state.targetMeshName}] using [${state.cutterMeshName}]`;
+        } else if (state.mode === 'union') {
+          guidance.textContent = `Fuses [${state.targetMeshName}] and [${state.cutterMeshName}] into a single solid`;
+        } else {
+          guidance.textContent = `Keeps common volume between [${state.targetMeshName}] and [${state.cutterMeshName}]`;
+        }
+      } else if (state.cutterMeshName) {
+        guidance.textContent = `Drag [${state.cutterMeshName}] through a wall, then press Enter to Carve`;
+      } else {
+        guidance.textContent = 'Drag a cutter brush into a wall and press Enter (or pick Target & Cutter)';
+      }
+
+      modeChips.forEach((chip) => {
+        chip.classList.toggle('active', chip.getAttribute('data-csg-mode') === state.mode);
+      });
+
+      const pickTargetBtn = this.container.querySelector('#pb-csg-pick-target') as HTMLElement;
+      if (pickTargetBtn) {
+        pickTargetBtn.classList.toggle('active', state.pickingMode === 'target');
+        pickTargetBtn.textContent = state.pickingMode === 'target' ? 'Cancel' : 'Pick';
+      }
+
+      const pickCutterBtn = this.container.querySelector('#pb-csg-pick-cutter') as HTMLElement;
+      if (pickCutterBtn) {
+        pickCutterBtn.classList.toggle('active', state.pickingMode === 'cutter');
+        pickCutterBtn.textContent = state.pickingMode === 'cutter' ? 'Cancel' : 'Pick';
+      }
+
+      const csgBtn = this.container.querySelector('#pb-tool-csg');
+      if (csgBtn) {
+        csgBtn.classList.toggle('active', state.isActive);
       }
     };
   }
@@ -1808,8 +2020,11 @@ export class UIManager {
     // Status bar text
     const statusInfo = this.container.querySelector('#pb-status-info')!;
     const isClip = !!this.editor.clipTool?.isActive;
+    const isCSG = !!this.editor.csgTool?.isActive;
     if (isPlaytest) {
       statusInfo.textContent = 'Playtesting level (FPS controller active — ESC to exit)';
+    } else if (isCSG) {
+      statusInfo.textContent = 'CSG Carve Tool (Ctrl+Shift+C): Punch doorway/window through wall • Enter: Carve • Esc: Exit';
     } else if (isClip) {
       statusInfo.textContent = 'Clip Tool (Shift+X): Click 2 points for vertical plane or 3 for angled plane • Shift+X: Cycle mode • Enter: Slice • Esc: Exit';
     } else if (mode === 'brush') {
@@ -1841,6 +2056,12 @@ export class UIManager {
     if (clipBtn) clipBtn.classList.toggle('active', isClip);
     const clipHud = this.container.querySelector('#pb-clip-hud') as HTMLElement;
     if (clipHud) clipHud.style.display = isClip ? 'flex' : 'none';
+
+    // CSG Tool Button & HUD Sync
+    const csgBtn = this.container.querySelector('#pb-tool-csg');
+    if (csgBtn) csgBtn.classList.toggle('active', isCSG);
+    const csgHud = this.container.querySelector('#pb-csg-hud') as HTMLElement;
+    if (csgHud) csgHud.style.display = isCSG ? 'flex' : 'none';
 
     // Grid snap footer
     const coordsInfo = this.container.querySelector('#pb-coords-info')!;
