@@ -357,6 +357,18 @@ export class UIManager {
                     <span class="pb-entity-btn-sub">Cone spotlight</span>
                   </div>
                 </button>
+                <button id="pb-btn-add-trigger" class="pb-entity-btn" title="Add Trigger / Zone Box (Death Zone, Checkpoint, Ladder, Transition)">
+                  <div class="pb-entity-btn-icon trigger">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <rect x="3" y="3" width="18" height="18" rx="2" stroke-dasharray="3 3"></rect>
+                      <path d="m9 12 2 2 4-4"></path>
+                    </svg>
+                  </div>
+                  <div class="pb-entity-btn-info">
+                    <span class="pb-entity-btn-name">Trigger Zone</span>
+                    <span class="pb-entity-btn-sub">Volume trigger box</span>
+                  </div>
+                </button>
               </div>
             </div>
 
@@ -775,6 +787,59 @@ export class UIManager {
                     <input type="checkbox" id="pb-light-shadow-toggle" checked />
                     <span>Cast Dynamic Shadows</span>
                   </label>
+                </div>
+              </div>
+
+              <!-- Trigger Zone Controls -->
+              <div id="pb-entity-props-trigger" class="pb-entity-subprops" style="display: none;">
+                <!-- Zone Type Dropdown -->
+                <div class="pb-entity-row">
+                  <label for="pb-trigger-type-select">Zone Type</label>
+                  <select id="pb-trigger-type-select" class="pb-select-input pb-select-sm">
+                    <option value="death_zone">💀 Death Zone (Hazard Elimination)</option>
+                    <option value="checkpoint">🚩 Checkpoint (Save Respawn)</option>
+                    <option value="ladder">🪜 Ladder (Climbable Volume)</option>
+                    <option value="transition">🚪 Level Transition (Exit / Warp)</option>
+                    <option value="custom">⚡ Custom Trigger (Generic Event)</option>
+                  </select>
+                </div>
+
+                <!-- Zone Tag / Identifier -->
+                <div class="pb-entity-row">
+                  <label for="pb-trigger-tag-input">Tag / Identifier</label>
+                  <input type="text" id="pb-trigger-tag-input" placeholder="e.g. lava_pit, level_02" class="pb-text-input pb-text-input-sm" />
+                </div>
+
+                <!-- Volume Dimensions (X, Y, Z meters) -->
+                <div class="pb-entity-row">
+                  <div class="pb-field-header">
+                    <label>Volume Size (Meters)</label>
+                  </div>
+                  <div class="pb-transform-row pb-trigger-dims-row">
+                    <div class="pb-coord-input">
+                      <span class="pb-axis-label x">X</span>
+                      <input type="number" id="pb-trigger-size-x" step="0.5" min="0.5" max="50" value="4.0" class="pb-text-input pb-text-input-sm" />
+                    </div>
+                    <div class="pb-coord-input">
+                      <span class="pb-axis-label y">Y</span>
+                      <input type="number" id="pb-trigger-size-y" step="0.5" min="0.5" max="50" value="2.5" class="pb-text-input pb-text-input-sm" />
+                    </div>
+                    <div class="pb-coord-input">
+                      <span class="pb-axis-label z">Z</span>
+                      <input type="number" id="pb-trigger-size-z" step="0.5" min="0.5" max="50" value="4.0" class="pb-text-input pb-text-input-sm" />
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Quick Dimension Presets -->
+                <div class="pb-entity-row">
+                  <label>Dimension Presets</label>
+                  <div class="pb-preset-chips pb-trigger-preset-chips">
+                    <button type="button" class="pb-chip" data-sx="4" data-sy="2.5" data-sz="4">4×2.5×4m</button>
+                    <button type="button" class="pb-chip" data-sx="8" data-sy="1" data-sz="8">Hazard Pit</button>
+                    <button type="button" class="pb-chip" data-sx="1.5" data-sy="4" data-sz="1.5">Ladder</button>
+                    <button type="button" class="pb-chip" data-sx="2" data-sy="3" data-sz="2">Doorway</button>
+                  </div>
                 </div>
               </div>
             </div>
@@ -1340,6 +1405,9 @@ export class UIManager {
     this.container.querySelector('#pb-btn-add-spot-light')?.addEventListener('click', () => {
       this.editor?.createEntity('light_spot');
     });
+    this.container.querySelector('#pb-btn-add-trigger')?.addEventListener('click', () => {
+      this.editor?.createEntity('trigger_zone');
+    });
 
     // Transform Inspector Inputs (Supports both Meshes and Entities)
     const setupTransformInput = (id: string, axis: 'x' | 'y' | 'z', type: 'pos' | 'rot' | 'scale') => {
@@ -1573,6 +1641,67 @@ export class UIManager {
         ent.updateProperties({ castShadow: lightShadowToggle.checked });
         this.editor?.recordHistory('Light Cast Shadow');
       }
+    });
+
+    // Trigger Zone Type Dropdown
+    const triggerTypeSelect = this.container.querySelector('#pb-trigger-type-select') as HTMLSelectElement;
+    triggerTypeSelect?.addEventListener('change', () => {
+      const ent = this.editor?.selectionManager.selectedEntity;
+      if (ent && ent.type === 'trigger_zone') {
+        ent.updateProperties({ zoneType: triggerTypeSelect.value as any });
+        this.editor?.recordHistory(`Zone Type: ${triggerTypeSelect.value}`);
+        this.updateHierarchy();
+        this.updateUI();
+      }
+    });
+
+    // Trigger Zone Tag / Identifier
+    const triggerTagInput = this.container.querySelector('#pb-trigger-tag-input') as HTMLInputElement;
+    triggerTagInput?.addEventListener('change', () => {
+      const ent = this.editor?.selectionManager.selectedEntity;
+      if (ent && ent.type === 'trigger_zone') {
+        ent.updateProperties({ zoneTag: triggerTagInput.value.trim() });
+        this.editor?.recordHistory('Zone Tag');
+      }
+    });
+
+    // Trigger Zone Dimension Inputs
+    const triggerSizeX = this.container.querySelector('#pb-trigger-size-x') as HTMLInputElement;
+    const triggerSizeY = this.container.querySelector('#pb-trigger-size-y') as HTMLInputElement;
+    const triggerSizeZ = this.container.querySelector('#pb-trigger-size-z') as HTMLInputElement;
+
+    const updateTriggerSize = (record = true) => {
+      const ent = this.editor?.selectionManager.selectedEntity;
+      if (ent && ent.type === 'trigger_zone') {
+        const sx = Math.max(0.5, parseFloat(triggerSizeX?.value) || 4.0);
+        const sy = Math.max(0.5, parseFloat(triggerSizeY?.value) || 2.5);
+        const sz = Math.max(0.5, parseFloat(triggerSizeZ?.value) || 4.0);
+        ent.updateProperties({ sizeX: sx, sizeY: sy, sizeZ: sz });
+        if (record) {
+          this.editor?.recordHistory('Resize Trigger Volume');
+        }
+      }
+    };
+
+    triggerSizeX?.addEventListener('change', () => updateTriggerSize(true));
+    triggerSizeY?.addEventListener('change', () => updateTriggerSize(true));
+    triggerSizeZ?.addEventListener('change', () => updateTriggerSize(true));
+
+    // Quick Trigger Preset Dimension Chips
+    this.container.querySelectorAll('.pb-trigger-preset-chips .pb-chip').forEach((chip) => {
+      chip.addEventListener('click', () => {
+        const sx = parseFloat(chip.getAttribute('data-sx') || '4');
+        const sy = parseFloat(chip.getAttribute('data-sy') || '2.5');
+        const sz = parseFloat(chip.getAttribute('data-sz') || '4');
+        const ent = this.editor?.selectionManager.selectedEntity;
+        if (ent && ent.type === 'trigger_zone') {
+          ent.updateProperties({ sizeX: sx, sizeY: sy, sizeZ: sz });
+          if (triggerSizeX) triggerSizeX.value = sx.toString();
+          if (triggerSizeY) triggerSizeY.value = sy.toString();
+          if (triggerSizeZ) triggerSizeZ.value = sz.toString();
+          this.editor?.recordHistory('Trigger Preset Dimensions');
+        }
+      });
     });
   }
 
@@ -2045,10 +2174,12 @@ export class UIManager {
 
       const propsSpawn = this.container.querySelector('#pb-entity-props-spawn') as HTMLElement;
       const propsLight = this.container.querySelector('#pb-entity-props-light') as HTMLElement;
+      const propsTrigger = this.container.querySelector('#pb-entity-props-trigger') as HTMLElement;
 
       if (entity.type === 'player_spawn') {
         if (propsSpawn) propsSpawn.style.display = 'block';
         if (propsLight) propsLight.style.display = 'none';
+        if (propsTrigger) propsTrigger.style.display = 'none';
 
         const yaw = entity.properties.yaw ?? 0;
         const spawnYawSlider = this.container.querySelector('#pb-spawn-yaw-slider') as HTMLInputElement;
@@ -2063,9 +2194,37 @@ export class UIManager {
           const chipYaw = parseInt(chip.getAttribute('data-yaw') || '-1', 10);
           chip.classList.toggle('active', chipYaw === yaw);
         });
+      } else if (entity.type === 'trigger_zone') {
+        if (propsSpawn) propsSpawn.style.display = 'none';
+        if (propsLight) propsLight.style.display = 'none';
+        if (propsTrigger) propsTrigger.style.display = 'block';
+
+        const zType = entity.properties.zoneType || 'death_zone';
+        typeBadge.textContent = `TRIGGER (${zType.toUpperCase()})`;
+
+        const triggerTypeSelect = this.container.querySelector('#pb-trigger-type-select') as HTMLSelectElement;
+        const triggerTagInput = this.container.querySelector('#pb-trigger-tag-input') as HTMLInputElement;
+        const triggerSizeX = this.container.querySelector('#pb-trigger-size-x') as HTMLInputElement;
+        const triggerSizeY = this.container.querySelector('#pb-trigger-size-y') as HTMLInputElement;
+        const triggerSizeZ = this.container.querySelector('#pb-trigger-size-z') as HTMLInputElement;
+
+        if (triggerTypeSelect) triggerTypeSelect.value = zType;
+        if (triggerTagInput && document.activeElement !== triggerTagInput) {
+          triggerTagInput.value = entity.properties.zoneTag || '';
+        }
+        if (triggerSizeX && document.activeElement !== triggerSizeX) {
+          triggerSizeX.value = (entity.properties.sizeX ?? 4.0).toFixed(1);
+        }
+        if (triggerSizeY && document.activeElement !== triggerSizeY) {
+          triggerSizeY.value = (entity.properties.sizeY ?? 2.5).toFixed(1);
+        }
+        if (triggerSizeZ && document.activeElement !== triggerSizeZ) {
+          triggerSizeZ.value = (entity.properties.sizeZ ?? 4.0).toFixed(1);
+        }
       } else {
         if (propsSpawn) propsSpawn.style.display = 'none';
         if (propsLight) propsLight.style.display = 'block';
+        if (propsTrigger) propsTrigger.style.display = 'none';
 
         const color = entity.properties.color || '#ffffff';
         const intensity = entity.properties.intensity ?? 3.5;

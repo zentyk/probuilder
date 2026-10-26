@@ -124,6 +124,9 @@ export class MaterialManager {
   }
 
   private createGridTexture(def: DevMaterialDef): THREE.CanvasTexture {
+    if (typeof document === 'undefined') {
+      return new THREE.CanvasTexture({} as any);
+    }
     const size = def.tileSize;
     const canvas = document.createElement('canvas');
     canvas.width = size;

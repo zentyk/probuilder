@@ -260,6 +260,8 @@ export class Editor {
         entity.group.position.set(target.x, 2.5, target.z);
       } else if (type === 'light_spot') {
         entity.group.position.set(target.x, 3.5, target.z);
+      } else if (type === 'trigger_zone') {
+        entity.group.position.set(target.x, 0, target.z);
       }
     }
 
@@ -650,6 +652,10 @@ export class Editor {
     }
 
     this.playtestController.setLevelMeshes(this.meshes);
+    this.playtestController.setEntities(this.entities);
+    this.playtestController.onTriggerEvent = (type, message) => {
+      this.toast(message, type === 'death' ? 'warn' : 'info');
+    };
     this.playtestController.start(this.orbitControls.target, playerSpawn);
     this.toast(
       playerSpawn ? `Spawned at ${playerSpawn.name}! Press ESC to exit.` : 'Entered Playtest Mode. Press ESC to exit.',
@@ -676,16 +682,16 @@ export class Editor {
   // --- Export & Persistence ---
 
   public exportOBJ(): void {
-    const objData = ExportManager.exportToOBJ(this.meshes);
+    const objData = ExportManager.exportToOBJ(this.meshes, this.entities);
     ExportManager.downloadFile('voskel_level.obj', objData, 'text/plain');
-    this.toast('Exported level to Wavefront .OBJ', 'success');
+    this.toast(`Exported level (${this.meshes.length} meshes, ${this.entities.length} entities) to .OBJ`, 'success');
   }
 
   public async exportGLTF(): Promise<void> {
     try {
-      const gltfData = await ExportManager.exportToGLTF(this.meshes, true);
+      const gltfData = await ExportManager.exportToGLTF(this.meshes, this.entities, true);
       ExportManager.downloadFile('voskel_level.glb', gltfData as any, 'model/gltf-binary');
-      this.toast('Exported level to glTF / GLB', 'success');
+      this.toast(`Exported level & metadata (${this.entities.length} entities) to glTF / GLB`, 'success');
     } catch (e: any) {
       this.toast(`Export failed: ${e.message}`, 'warn');
     }

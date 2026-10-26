@@ -7,6 +7,7 @@ export class PlaytestController {
   private camera: THREE.PerspectiveCamera;
   private domElement: HTMLElement;
   private levelMeshes: EditableMesh[] = [];
+  private entities: Entity[] = [];
 
   // Saved editor camera state to restore upon exit
   private savedCameraPos = new THREE.Vector3();
@@ -18,10 +19,17 @@ export class PlaytestController {
   private yaw = 0;
   private pitch = 0;
   private isGrounded = false;
+  private isClimbingLadder = false;
   private eyeHeight = 1.6;
   private moveSpeed = 8.0;
+  private ladderSpeed = 5.0;
   private jumpForce = 8.5;
   private gravity = 24.0;
+
+  // Active respawn point (initial spawn or last checkpoint)
+  private activeRespawnPos = new THREE.Vector3();
+  private activeRespawnYaw = 0;
+  private activeTriggers = new Set<string>();
 
   // Key states
   private keys = {
@@ -34,6 +42,7 @@ export class PlaytestController {
 
   private raycaster = new THREE.Raycaster();
   public onExit?: () => void;
+  public onTriggerEvent?: (type: 'death' | 'checkpoint' | 'ladder' | 'transition', message: string) => void;
 
   constructor(camera: THREE.PerspectiveCamera, domElement: HTMLElement) {
     this.camera = camera;
@@ -44,6 +53,10 @@ export class PlaytestController {
 
   public setLevelMeshes(meshes: EditableMesh[]): void {
     this.levelMeshes = meshes;
+  }
+
+  public setEntities(entities: Entity[]): void {
+    this.entities = entities;
   }
 
   public start(editorTarget: THREE.Vector3, spawnEntity?: Entity | null): void {
@@ -67,6 +80,10 @@ export class PlaytestController {
       this.pitch = Math.asin(THREE.MathUtils.clamp(forward.y, -0.99, 0.99));
     }
 
+    this.activeRespawnPos.copy(this.playerPos);
+    this.activeRespawnYaw = this.yaw;
+    this.activeTriggers.clear();
+    this.isClimbingLadder = false;
     this.playerVelocity.set(0, 0, 0);
 
     // Set camera position to player eye height immediately
@@ -80,6 +97,8 @@ export class PlaytestController {
 
   public stop(): THREE.Vector3 {
     this.isActive = false;
+    this.activeTriggers.clear();
+    this.isClimbingLadder = false;
     document.exitPointerLock?.();
 
     // Restore editor camera
@@ -122,13 +141,70 @@ export class PlaytestController {
     this.playerVelocity.x = moveDir.x * this.moveSpeed;
     this.playerVelocity.z = moveDir.z * this.moveSpeed;
 
-    // Apply gravity
-    this.playerVelocity.y -= this.gravity * dt;
+    // --- Trigger Zone Volume Detection ---
+    const playerBox = new THREE.Box3();
+    playerBox.min.set(this.playerPos.x - 0.35, this.playerPos.y, this.playerPos.z - 0.35);
+    playerBox.max.set(this.playerPos.x + 0.35, this.playerPos.y + 1.8, this.playerPos.z + 0.35);
 
-    // Handle Jump
-    if (this.keys.jump && this.isGrounded) {
-      this.playerVelocity.y = this.jumpForce;
-      this.isGrounded = false;
+    let inLadder = false;
+    for (const ent of this.entities) {
+      if (ent.type !== 'trigger_zone') continue;
+      const triggerBox = ent.getWorldBoundingBox();
+      if (playerBox.intersectsBox(triggerBox)) {
+        const zType = ent.properties.zoneType || 'death_zone';
+        const isFirstEnter = !this.activeTriggers.has(ent.id);
+        this.activeTriggers.add(ent.id);
+
+        if (zType === 'death_zone') {
+          // Instant elimination & respawn
+          this.playerPos.copy(this.activeRespawnPos);
+          this.playerVelocity.set(0, 0, 0);
+          this.yaw = this.activeRespawnYaw;
+          this.pitch = 0;
+          this.onTriggerEvent?.('death', `☠️ Eliminated by Death Zone: "${ent.name}"! Respawned at Checkpoint.`);
+          return;
+        } else if (zType === 'checkpoint') {
+          if (isFirstEnter) {
+            this.activeRespawnPos.copy(ent.group.position);
+            this.activeRespawnYaw = this.yaw;
+            this.onTriggerEvent?.('checkpoint', `🚩 Checkpoint Saved: "${ent.name}"!`);
+          }
+        } else if (zType === 'ladder') {
+          inLadder = true;
+          if (isFirstEnter) {
+            this.onTriggerEvent?.('ladder', `🪜 Entered Ladder volume. Climb with W / S.`);
+          }
+        } else if (zType === 'transition') {
+          if (isFirstEnter) {
+            const tag = ent.properties.zoneTag ? ` [${ent.properties.zoneTag}]` : '';
+            this.onTriggerEvent?.('transition', `🚪 Level Transition: "${ent.name}"${tag}!`);
+          }
+        }
+      } else {
+        this.activeTriggers.delete(ent.id);
+      }
+    }
+
+    this.isClimbingLadder = inLadder;
+
+    // --- Vertical Physics (Ladder vs Free Flight / Gravity) ---
+    if (this.isClimbingLadder) {
+      if (this.keys.forward) {
+        this.playerVelocity.y = this.ladderSpeed;
+      } else if (this.keys.backward) {
+        this.playerVelocity.y = -this.ladderSpeed;
+      } else {
+        this.playerVelocity.y = 0;
+      }
+    } else {
+      // Normal gravity
+      this.playerVelocity.y -= this.gravity * dt;
+
+      // Handle Jump
+      if (this.keys.jump && this.isGrounded) {
+        this.playerVelocity.y = this.jumpForce;
+        this.isGrounded = false;
+      }
     }
 
     // Attempt movement with collision detection

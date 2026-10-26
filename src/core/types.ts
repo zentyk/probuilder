@@ -91,7 +91,9 @@ export interface DevMaterialDef {
   metalness: number;
 }
 
-export type EntityType = 'player_spawn' | 'light_point' | 'light_spot';
+export type ZoneType = 'death_zone' | 'checkpoint' | 'ladder' | 'transition' | 'custom';
+
+export type EntityType = 'player_spawn' | 'light_point' | 'light_spot' | 'trigger_zone';
 
 export interface EntityProperties {
   // Player Spawn properties
@@ -105,6 +107,13 @@ export interface EntityProperties {
   angle?: number; // Spotlight cone angle in degrees (default: 45)
   penumbra?: number; // Spotlight soft edge factor (0 to 1)
   castShadow?: boolean;
+
+  // Trigger / Zone properties
+  zoneType?: ZoneType;
+  sizeX?: number; // Width in meters (default: 4.0)
+  sizeY?: number; // Height in meters (default: 2.5)
+  sizeZ?: number; // Depth in meters (default: 4.0)
+  zoneTag?: string; // Tag, target level or event identifier
 }
 
 export interface EntityData {

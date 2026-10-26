@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import type { EntityData, EntityProperties, EntityType } from './types';
+import type { EntityData, EntityProperties, EntityType, ZoneType } from './types';
 
 let entityIdCounter = 1;
 
@@ -18,6 +18,11 @@ export class Entity {
   private spotConeLines?: THREE.LineSegments;
   private coreMesh?: THREE.Mesh;
   private playerArrow?: THREE.Group;
+
+  // Trigger Zone visual elements
+  private triggerMesh?: THREE.Mesh;
+  private triggerLines?: THREE.LineSegments;
+  private triggerLabelSprite?: THREE.Sprite;
 
   constructor(type: EntityType, name?: string, id?: string) {
     this.id = id || `ent_${type}_${entityIdCounter++}`;
@@ -53,6 +58,8 @@ export class Entity {
         return `Point_Light_${num}`;
       case 'light_spot':
         return `Spot_Light_${num}`;
+      case 'trigger_zone':
+        return `Trigger_Zone_${num}`;
     }
   }
 
@@ -80,6 +87,14 @@ export class Entity {
           penumbra: 0.35,
           castShadow: true,
         };
+      case 'trigger_zone':
+        return {
+          zoneType: 'death_zone',
+          sizeX: 4.0,
+          sizeY: 2.5,
+          sizeZ: 4.0,
+          zoneTag: 'hazard_kill',
+        };
     }
   }
 
@@ -93,6 +108,9 @@ export class Entity {
     this.rangeRings = [];
     this.spotConeLines = undefined;
     this.playerArrow = undefined;
+    this.triggerMesh = undefined;
+    this.triggerLines = undefined;
+    this.triggerLabelSprite = undefined;
 
     if (this.type === 'player_spawn') {
       this.buildPlayerSpawnVisuals();
@@ -100,6 +118,8 @@ export class Entity {
       this.buildPointLightVisuals();
     } else if (this.type === 'light_spot') {
       this.buildSpotLightVisuals();
+    } else if (this.type === 'trigger_zone') {
+      this.buildTriggerZoneVisuals();
     }
   }
 
@@ -340,6 +360,149 @@ export class Entity {
     this.helperGroup.add(this.spotConeLines);
   }
 
+  // --- Trigger Zone Visuals (Translucent Volume Box + Outlines + Billboard Badge) ---
+
+  private buildTriggerZoneVisuals(): void {
+    const sx = Math.max(0.5, this.properties.sizeX ?? 4.0);
+    const sy = Math.max(0.5, this.properties.sizeY ?? 2.5);
+    const sz = Math.max(0.5, this.properties.sizeZ ?? 4.0);
+    const zoneType = (this.properties.zoneType || 'death_zone') as ZoneType;
+
+    // Hit-box for picking trigger volume in 3D & 2D views
+    this.hitMesh.geometry.dispose();
+    this.hitMesh.geometry = new THREE.BoxGeometry(sx, sy, sz);
+    this.hitMesh.position.set(0, sy / 2, 0);
+
+    let colorHex = 0xef4444;
+    let colorCss = '#ef4444';
+    let label = '💀 DEATH ZONE';
+
+    if (zoneType === 'death_zone') {
+      colorHex = 0xef4444;
+      colorCss = '#ef4444';
+      label = '💀 DEATH ZONE';
+    } else if (zoneType === 'checkpoint') {
+      colorHex = 0x10b981;
+      colorCss = '#10b981';
+      label = '🚩 CHECKPOINT';
+    } else if (zoneType === 'ladder') {
+      colorHex = 0xf59e0b;
+      colorCss = '#f59e0b';
+      label = '🪜 LADDER ZONE';
+    } else if (zoneType === 'transition') {
+      colorHex = 0x8b5cf6;
+      colorCss = '#8b5cf6';
+      label = '🚪 LEVEL TRANSITION';
+    } else {
+      colorHex = 0x06b6d4;
+      colorCss = '#06b6d4';
+      label = '⚡ TRIGGER ZONE';
+    }
+
+    // 1. Translucent Volume Box
+    const boxGeom = new THREE.BoxGeometry(sx, sy, sz);
+    const boxMat = new THREE.MeshBasicMaterial({
+      color: colorHex,
+      transparent: true,
+      opacity: 0.28,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+    });
+    const boxMesh = new THREE.Mesh(boxGeom, boxMat);
+    boxMesh.position.set(0, sy / 2, 0);
+    this.helperGroup.add(boxMesh);
+    this.triggerMesh = boxMesh;
+
+    // 2. Wireframe / Edge Outlines
+    const edgesGeom = new THREE.EdgesGeometry(boxGeom);
+    const edgesMat = new THREE.LineBasicMaterial({
+      color: colorHex,
+      transparent: true,
+      opacity: 0.85,
+    });
+    const edgesLines = new THREE.LineSegments(edgesGeom, edgesMat);
+    edgesLines.position.set(0, sy / 2, 0);
+    this.helperGroup.add(edgesLines);
+    this.triggerLines = edgesLines;
+
+    // 3. Interior details for specific zone types (e.g. ladder rungs)
+    if (zoneType === 'ladder') {
+      const stepDist = 0.45;
+      const rungs = Math.max(2, Math.floor(sy / stepDist));
+      const rungPositions: number[] = [];
+      const rungWidth = Math.min(sx * 0.75, 1.2);
+      const halfW = rungWidth / 2;
+      for (let i = 1; i < rungs; i++) {
+        const y = i * stepDist;
+        if (y >= sy - 0.1) break;
+        rungPositions.push(-halfW, y, 0, halfW, y, 0);
+      }
+      if (rungPositions.length > 0) {
+        const rungGeom = new THREE.BufferGeometry();
+        rungGeom.setAttribute('position', new THREE.Float32BufferAttribute(rungPositions, 3));
+        const rungMat = new THREE.LineBasicMaterial({ color: 0xfde047, transparent: true, opacity: 0.85 });
+        const rungLines = new THREE.LineSegments(rungGeom, rungMat);
+        this.helperGroup.add(rungLines);
+      }
+    }
+
+    // 4. Floating Billboard Badge Sprite (readable in 3D & 2D views)
+    const sprite = this.createTriggerLabelSprite(label, colorCss, this.properties.zoneTag);
+    sprite.position.set(0, sy + 0.35, 0);
+    this.helperGroup.add(sprite);
+    this.triggerLabelSprite = sprite;
+  }
+
+  private createTriggerLabelSprite(title: string, accentColor: string, tag?: string): THREE.Sprite {
+    if (typeof document === 'undefined') {
+      return new THREE.Sprite();
+    }
+
+    const canvas = document.createElement('canvas');
+    canvas.width = 512;
+    canvas.height = 128;
+    const ctx = canvas.getContext('2d');
+    if (ctx) {
+      ctx.clearRect(0, 0, 512, 128);
+
+      // Pill container background
+      ctx.fillStyle = 'rgba(15, 18, 28, 0.9)';
+      ctx.strokeStyle = accentColor;
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      ctx.roundRect(10, 10, 492, 108, 16);
+      ctx.fill();
+      ctx.stroke();
+
+      // Title
+      ctx.fillStyle = '#ffffff';
+      ctx.font = 'bold 36px "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = tag ? 'bottom' : 'middle';
+      ctx.fillText(title, 256, tag ? 62 : 64);
+
+      // Subtag
+      if (tag) {
+        ctx.fillStyle = accentColor;
+        ctx.font = 'bold 22px "JetBrains Mono", monospace';
+        ctx.textBaseline = 'top';
+        ctx.fillText(`tag: ${tag}`, 256, 68);
+      }
+    }
+
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.minFilter = THREE.LinearFilter;
+    const spriteMat = new THREE.SpriteMaterial({
+      map: texture,
+      transparent: true,
+      depthTest: true,
+      depthWrite: false,
+    });
+    const sprite = new THREE.Sprite(spriteMat);
+    sprite.scale.set(2.4, 0.6, 1);
+    return sprite;
+  }
+
   // --- Public Property Mutators ---
 
   public updateProperties(props: Partial<EntityProperties>): void {
@@ -384,6 +547,8 @@ export class Entity {
         this.light.castShadow = this.properties.castShadow !== false;
       }
       this.updateSpotConeHelper(dist, angleRad, col);
+    } else if (this.type === 'trigger_zone') {
+      this.buildTriggerZoneVisuals();
     }
   }
 
@@ -396,10 +561,37 @@ export class Entity {
   }
 
   /**
+   * Returns world space bounding box for trigger volume collision detection
+   */
+  public getWorldBoundingBox(): THREE.Box3 {
+    this.group.updateMatrixWorld(true);
+    const sx = Math.max(0.5, this.properties.sizeX ?? 4.0) * Math.abs(this.group.scale.x);
+    const sy = Math.max(0.5, this.properties.sizeY ?? 2.5) * Math.abs(this.group.scale.y);
+    const sz = Math.max(0.5, this.properties.sizeZ ?? 4.0) * Math.abs(this.group.scale.z);
+    const halfX = sx / 2;
+    const halfZ = sz / 2;
+    const min = new THREE.Vector3(-halfX, 0, -halfZ);
+    const max = new THREE.Vector3(halfX, sy, halfZ);
+    const box = new THREE.Box3(min, max);
+    box.applyMatrix4(this.group.matrixWorld);
+    return box;
+  }
+
+  /**
    * Toggles visibility of editor visual representations during Playtest mode
    */
   public setPlaytestVisibility(visible: boolean): void {
-    this.helperGroup.visible = visible;
+    if (this.type === 'trigger_zone') {
+      if (this.triggerLabelSprite) this.triggerLabelSprite.visible = visible;
+      if (this.triggerMesh) {
+        (this.triggerMesh.material as THREE.MeshBasicMaterial).opacity = visible ? 0.28 : 0.12;
+      }
+      if (this.triggerLines) {
+        (this.triggerLines.material as THREE.LineBasicMaterial).opacity = visible ? 0.85 : 0.3;
+      }
+    } else {
+      this.helperGroup.visible = visible;
+    }
   }
 
   // --- Serialization ---
